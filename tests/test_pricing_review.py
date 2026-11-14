@@ -105,6 +105,47 @@ def test_rejection_leaves_rates_untouched(scripted_model):
     assert [r.rate for r in pms.get_daily_rates("mountain-cabins", *window)] == before
 
 
+def test_published_rates_never_go_below_the_property_floor(scripted_model):
+    """Seaside Villa: floor $192 (base 320 × 0.6). A -25% cut would take the
+    $224 weekdays to $168 — publication must stop at the floor, while the
+    $280 weekends land at $210 untouched by it."""
+    pms = MockPMS(DATA_DIR)
+    window = {"property_id": "seaside-villa", "start": date(2026, 12, 1), "end": date(2027, 1, 1)}
+    proposal = RateProposal(adjustment_pct=-25, rationale="deep cut", expected_effect="volume")
+    workflow = build_pricing_review(
+        pms, AS_OF, model=scripted_model(structured=[proposal]),
+        checkpointer=InMemorySaver(), publisher=pms,
+    )
+    workflow.invoke(window, CONFIG)
+    resumed = workflow.invoke(Command(resume={"approved": True, "note": ""}), CONFIG)
+
+    assert "bounded by the property's rate limits" in resumed["outcome"]
+    rates = {r.day: r.rate for r in pms.get_daily_rates("seaside-villa", window["start"], window["end"])}
+    assert min(rates.values()) == 192.0  # the floor, not 168
+    assert max(rates.values()) == 210.0  # 280 × 0.75, above the floor
+
+
+def test_exhausted_discounts_skip_the_llm_entirely(scripted_model):
+    """Rates already at the floor + weak pace → deterministic 'no further
+    discount' outcome; any LLM call would make the stub raise StopIteration."""
+    pms = MockPMS(DATA_DIR)
+    prop = pms.get_property("seaside-villa")
+    start, end = date(2026, 12, 1), date(2027, 1, 1)
+    floored = [
+        r.model_copy(update={"rate": float(prop.min_rate)})
+        for r in pms.get_daily_rates("seaside-villa", start, end)
+    ]
+    pms.publish_rates("seaside-villa", floored)
+
+    workflow = build_pricing_review(
+        pms, AS_OF, model=scripted_model(), checkpointer=InMemorySaver(), publisher=pms
+    )
+    result = workflow.invoke({"property_id": "seaside-villa", "start": start, "end": end}, CONFIG)
+    assert "__interrupt__" not in result
+    assert "No further discount" in result["outcome"]
+    assert "non-price levers" in result["outcome"]
+
+
 def test_out_of_bounds_proposal_is_clamped_by_policy(scripted_model):
     # The "LLM" proposes -60%; policy caps at ±25% regardless.
     proposal = RateProposal(adjustment_pct=-60, rationale="panic", expected_effect="volume")

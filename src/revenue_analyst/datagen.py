@@ -183,6 +183,8 @@ def generate_dataset(profile: PropertyProfile) -> PropertyDataset:
     prop = Property(
         id=profile.slug, name=profile.name, city=profile.city,
         currency=profile.currency, room_types=room_types, units=units,
+        min_rate=round(profile.base_rate * 0.6),
+        max_rate=round(profile.base_rate * 1.8),
     )
 
     daily_rates = _build_rates(profile, prop.id)

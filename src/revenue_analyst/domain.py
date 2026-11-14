@@ -42,6 +42,12 @@ class Property(BaseModel):
     room_types: list[RoomType]
     units: list[Unit]
 
+    min_rate: float = 0.0
+    """Hard business floor for the reference nightly rate: no publication may
+    go below it, whatever any model proposes."""
+    max_rate: float | None = None
+    """Hard ceiling for the reference nightly rate (None = uncapped)."""
+
     @property
     def unit_count(self) -> int:
         return len(self.units)

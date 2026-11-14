@@ -77,6 +77,11 @@ Based ONLY on the analysis below (JSON), propose ONE rate adjustment within
 ±{max_pct}% and justify it with those numbers. "same_window_last_year" uses a
 364-day shift so weekdays align.
 
+Respect "rate_limits": published rates can never leave that band, so if
+current rates are already close to the floor, propose only the small cut that
+still fits (or focus the rationale on non-price levers) — repeated deep
+discounts on already-discounted rates destroy revenue.
+
 {analysis}
 """
 
@@ -105,17 +110,24 @@ def build_pricing_review(
             prop, pms.get_reservations(prop.id, ly_start, ly_end), ly_start, ly_end
         )
 
+        avg_rate = round(mean(r.rate for r in rates), 2) if rates else 0.0
+        # Discounts are exhausted once the average sits at (or within 2% of)
+        # the property's hard floor — a deterministic fact, not a judgment.
+        floor_reached = bool(rates) and avg_rate <= prop.min_rate * 1.02
+
         return {
             "analysis": {
                 "window": {"start": start.isoformat(), "end": end.isoformat()},
                 "pace": pace.model_dump(mode="json"),
                 "published_rates": {
                     "min": min(r.rate for r in rates),
-                    "avg": round(mean(r.rate for r in rates), 2),
+                    "avg": avg_rate,
                     "max": max(r.rate for r in rates),
                 }
                 if rates
                 else None,
+                "rate_limits": {"min": prop.min_rate, "max": prop.max_rate},
+                "rate_floor_reached": floor_reached,
                 "same_window_last_year": {
                     "occupancy": round(last_year.occupancy, 4),
                     "adr": round(last_year.adr, 2),
@@ -125,15 +137,32 @@ def build_pricing_review(
 
     def route(state: ReviewState) -> str:
         current_share = state["analysis"]["pace"]["pace"][0]["share_of_capacity"]
-        return "summarize" if current_share >= HEALTHY_OTB_SHARE else "propose"
+        if current_share >= HEALTHY_OTB_SHARE:
+            return "summarize"
+        if state["analysis"]["rate_floor_reached"]:
+            # Weak pace but nothing left to discount: proposing another cut
+            # would be bad revenue management, so the LLM is never asked.
+            return "summarize"
+        return "propose"
 
     def summarize(state: ReviewState) -> dict:
         current = state["analysis"]["pace"]["pace"][0]
+        window = f"{state['property_id']} {state['start']}→{state['end']}"
+        if current["share_of_capacity"] >= HEALTHY_OTB_SHARE:
+            return {
+                "outcome": (
+                    f"No action for {window}: {current['share_of_capacity']:.0%} of capacity "
+                    f"already on the books (threshold {HEALTHY_OTB_SHARE:.0%})."
+                )
+            }
+        limits = state["analysis"]["rate_limits"]
+        avg = state["analysis"]["published_rates"]["avg"]
         return {
             "outcome": (
-                f"No action for {state['property_id']} {state['start']}→{state['end']}: "
-                f"{current['share_of_capacity']:.0%} of capacity already on the books "
-                f"(threshold {HEALTHY_OTB_SHARE:.0%})."
+                f"No further discount for {window}: the average rate ${avg:.0f} is already at "
+                f"the property's minimum rate ${limits['min']:.0f}. Price cuts are exhausted — "
+                "consider non-price levers (minimum-stay rules, visibility, packages) or "
+                "revisit the floor itself."
             )
         }
 
@@ -184,14 +213,30 @@ def build_pricing_review(
                 )
             }
 
+        prop = pms.get_property(state["property_id"])
         factor = 1 + pct / 100
         current = pms.get_daily_rates(state["property_id"], state["start"], state["end"])
-        new_rates = [r.model_copy(update={"rate": float(round(r.rate * factor))}) for r in current]
+        new_rates = []
+        bounded = 0
+        for r in current:
+            raw = float(round(r.rate * factor))
+            clamped = max(raw, prop.min_rate)
+            if prop.max_rate is not None:
+                clamped = min(clamped, prop.max_rate)
+            if clamped != raw:
+                bounded += 1
+            new_rates.append(r.model_copy(update={"rate": clamped}))
         receipt = publisher.publish_rates(state["property_id"], new_rates)
+        limits_note = (
+            f" ({bounded} of {receipt.days} days bounded by the property's rate limits "
+            f"${prop.min_rate:.0f}–${prop.max_rate:.0f})"
+            if bounded
+            else ""
+        )
         return {
             "outcome": (
                 f"APPROVED & PUBLISHED: {pct:+.1f}% applied to {receipt.days} nightly rates "
-                f"for {window}.{note}"
+                f"for {window}{limits_note}.{note}"
             )
         }
 
