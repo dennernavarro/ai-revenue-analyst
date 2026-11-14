@@ -79,22 +79,11 @@ export default function App() {
           </span>
           AI Revenue Analyst
         </div>
-        {selected && (
-          <span className="prop-pill">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M4 21V7l6-4 6 4v14M10 9h.01M10 13h.01M10 17h.01M4 21h16" />
-            </svg>
-            {selected.name} · {selected.city}
-          </span>
-        )}
         <div className="spacer" />
         {asOf && <span className="pill muted">Data as of {asOf.toISOString().slice(0, 10)}</span>}
         <button className="btn-review" onClick={() => setReviewTick((t) => t + 1)}>
           Run pricing review
         </button>
-        <div className="avatar" aria-hidden="true">
-          DN
-        </div>
       </header>
 
       <div className="layout">
