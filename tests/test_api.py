@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 from langchain_core.messages import AIMessage
+from langgraph.checkpoint.memory import InMemorySaver
 
 from revenue_analyst.api import create_app
 from revenue_analyst.pms.mock import MockPMS
@@ -25,7 +26,9 @@ def client(scripted_model):
         AIMessage(content="We manage 3 properties."),
         AIMessage(content="You asked how many properties we manage."),
     ]
-    app = create_app(pms=MockPMS(DATA_DIR), model=scripted_model(script))
+    app = create_app(
+        pms=MockPMS(DATA_DIR), model=scripted_model(script), checkpointer=InMemorySaver()
+    )
     return TestClient(app)
 
 

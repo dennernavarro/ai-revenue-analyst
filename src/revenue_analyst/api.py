@@ -20,10 +20,11 @@ from datetime import date, datetime
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage
+from langgraph.checkpoint.base import BaseCheckpointSaver
 from pydantic import BaseModel
 
-from revenue_analyst.agents.v1_react import build_agent
+from revenue_analyst.agents.v2_graph import build_agent, sqlite_checkpointer
 from revenue_analyst.analytics import (
     BookingPace,
     PerformanceSummary,
@@ -71,17 +72,21 @@ def _resolve_as_of(pms: PMSProvider) -> datetime:
 def create_app(
     pms: PMSProvider | None = None,
     model: str | BaseChatModel | None = None,
+    checkpointer: BaseCheckpointSaver | None = None,
 ) -> FastAPI:
     load_dotenv()
     settings = Settings()
     pms = pms or MockPMS(settings.data_dir)
-    agent = build_agent(pms, _resolve_as_of(pms), model=model or settings.model)
+
+    # Stage 4: conversation memory lives in a LangGraph checkpointer (SQLite
+    # by default), keyed by thread_id — it survives server restarts, unlike
+    # Stage 3's in-process dict. Tests inject an InMemorySaver instead.
+    checkpointer = checkpointer or sqlite_checkpointer(settings.state_dir)
+    agent = build_agent(
+        pms, _resolve_as_of(pms), model=model or settings.model, checkpointer=checkpointer
+    )
 
     app = FastAPI(title="AI Revenue Analyst", version="0.1.0")
-
-    # Stage 3 conversation memory: a dict in the process. Restarting the
-    # server forgets everything — the limitation Stage 4's checkpointer fixes.
-    conversations: dict[str, list[BaseMessage]] = {}
 
     def _property_or_404(property_id: str) -> Property:
         try:
@@ -117,11 +122,11 @@ def create_app(
     @app.post("/chat")
     def chat(request: ChatRequest) -> ChatResponse:
         conversation_id = request.conversation_id or uuid.uuid4().hex
-        history = conversations.get(conversation_id, [])
-        result = agent.invoke({"messages": [*history, HumanMessage(request.message)]})
-        conversations[conversation_id] = result["messages"]
+        config = {"configurable": {"thread_id": conversation_id}}
+        previous = len(agent.get_state(config).values.get("messages", []))
+        result = agent.invoke({"messages": [HumanMessage(request.message)]}, config)
 
-        new_messages = result["messages"][len(history) + 1 :]
+        new_messages = result["messages"][previous + 1 :]
         tool_calls = [
             ToolCallInfo(name=call["name"], args=call["args"])
             for message in new_messages

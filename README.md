@@ -50,6 +50,10 @@ uv run python -m revenue_analyst.cli
 uv run python -m revenue_analyst.cli --once "How was August 2026 at Seaside Villa vs the other properties?"
 ```
 
+The default agent is v2 (hand-built LangGraph with a SQLite checkpointer in
+`.state/`): conversations survive restarts, and `--thread <id>` resumes any
+past conversation. `--agent v1` runs the Stage 2 version for comparison.
+
 The model is configuration, not code: `RA_MODEL` defaults to Claude Haiku via
 OpenRouter (`openrouter:<vendor>/<model>` works for any model there, since
 OpenRouter speaks the OpenAI API), and direct-provider strings like
@@ -80,7 +84,7 @@ the LLM; only `/chat` does — that boundary is the point.
 | 1 | LangChain tools over the analytics layer | ✅ |
 | 2 | First agent: `create_agent` + CLI chat + LangSmith tracing | ✅ |
 | 3 | FastAPI: `/chat` plus plain REST endpoints | ✅ |
-| 4 | LangGraph basics: explicit graph, state, checkpointing | ⬜ |
+| 4 | LangGraph basics: explicit graph, state, checkpointing | ✅ |
 | 5 | LangGraph control flow: routing, human-in-the-loop approval | ⬜ |
 | 6 | Deep Agents: planning, subagents, when they earn their cost | ⬜ |
 | 7 | Docker: containerized deployment | ⬜ |
