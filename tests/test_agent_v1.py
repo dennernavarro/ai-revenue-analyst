@@ -10,6 +10,7 @@ Stage 8 with LangSmith evaluations.
 from pathlib import Path
 
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+from langgraph.checkpoint.memory import InMemorySaver
 
 from revenue_analyst.agents.v1_react import build_agent
 from revenue_analyst.datagen import AS_OF
@@ -38,3 +39,21 @@ def test_agent_executes_tools_and_answers(scripted_model):
     assert "seaside-villa" in tool_results[0].content
 
     assert messages[-1].content == "We manage 3 properties."
+
+
+def test_checkpointer_keeps_history_per_thread(scripted_model):
+    script = [AIMessage(content="First answer."), AIMessage(content="Second answer.")]
+    agent = build_agent(
+        MockPMS(DATA_DIR), AS_OF, model=scripted_model(script), checkpointer=InMemorySaver()
+    )
+    config = {"configurable": {"thread_id": "t1"}}
+
+    agent.invoke({"messages": [HumanMessage("First question")]}, config)
+    # Only the new message is sent; the checkpointer supplies the rest.
+    result = agent.invoke({"messages": [HumanMessage("Second question")]}, config)
+
+    contents = [m.content for m in result["messages"]]
+    assert contents == ["First question", "First answer.", "Second question", "Second answer."]
+
+    # A different thread starts empty.
+    assert agent.get_state({"configurable": {"thread_id": "other"}}).values == {}

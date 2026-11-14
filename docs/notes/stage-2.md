@@ -2,6 +2,8 @@
 
 **Built:** `agents/v1_react.py` (LangChain's `create_agent` over the Stage 1
 tools) and `cli.py`, a terminal chat with manual conversation memory.
+(This agent later became THE agent: after Stage 4's hand-built version taught
+the internals, it was removed and v1 gained the checkpointer.)
 
 **What I learned**
 

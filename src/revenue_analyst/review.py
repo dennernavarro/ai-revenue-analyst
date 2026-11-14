@@ -18,8 +18,8 @@ from dotenv import load_dotenv
 from langgraph.types import Command
 
 from revenue_analyst.agents.pricing_review import build_pricing_review
-from revenue_analyst.agents.v2_graph import sqlite_checkpointer
 from revenue_analyst.config import Settings
+from revenue_analyst.persistence import sqlite_checkpointer
 from revenue_analyst.pms.mock import MockPMS
 
 

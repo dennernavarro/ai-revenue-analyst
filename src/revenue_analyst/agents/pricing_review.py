@@ -1,7 +1,7 @@
 """Stage 5: a pricing-review WORKFLOW — deterministic control flow with one
 LLM slot inside, and a human approval gate.
 
-The chat agents (v1/v2) let the model drive. Here the shape is inverted: the
+The chat agent lets the model drive. Here the shape is inverted: the
 graph drives, and the model fills one well-defined slot.
 
     START → analyze (deterministic)

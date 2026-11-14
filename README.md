@@ -50,9 +50,8 @@ uv run python -m revenue_analyst.cli
 uv run python -m revenue_analyst.cli --once "How was August 2026 at Seaside Villa vs the other properties?"
 ```
 
-The default agent is v2 (hand-built LangGraph with a SQLite checkpointer in
-`.state/`): conversations survive restarts, and `--thread <id>` resumes any
-past conversation. `--agent v1` runs the Stage 2 version for comparison.
+Conversations persist in a SQLite checkpointer (`.state/`): exit, come back,
+and `--thread <id>` resumes any past conversation across restarts.
 
 The model is configuration, not code: `RA_MODEL` defaults to Claude Haiku via
 OpenRouter (`openrouter:<vendor>/<model>` works for any model there, since
@@ -103,8 +102,10 @@ the LLM; only `/chat` does — that boundary is the point.
 | 7 | Docker: containerized deployment | ⬜ |
 | 8 | LangSmith evaluation: datasets, evaluators, regression runs | ⬜ |
 
-Agent versions are kept side by side in `src/revenue_analyst/agents/`
-(`v1_react.py`, `v2_graph.py`, `v3_deep.py`) so the progression stays readable.
+Stage 4 built the agent loop by hand in LangGraph to see the machinery, then
+we deleted it: `create_agent` + a checkpointer does the same job in a tenth
+of the code. The write-up lives in [docs/notes/stage-4.md](docs/notes/stage-4.md)
+and the implementation in the git history — learning kept, code debt not.
 
 ## Mock properties
 

@@ -26,7 +26,7 @@ from langgraph.types import Command
 from pydantic import BaseModel
 
 from revenue_analyst.agents.pricing_review import build_pricing_review
-from revenue_analyst.agents.v2_graph import build_agent, sqlite_checkpointer
+from revenue_analyst.agents.v1_react import build_agent
 from revenue_analyst.analytics import (
     BookingPace,
     PerformanceSummary,
@@ -36,6 +36,7 @@ from revenue_analyst.analytics import (
 from revenue_analyst.config import Settings
 from revenue_analyst.domain import Property
 from revenue_analyst.llm import message_text
+from revenue_analyst.persistence import sqlite_checkpointer
 from revenue_analyst.pms.mock import MockPMS
 from revenue_analyst.pms.provider import PMSProvider, PropertyNotFoundError
 

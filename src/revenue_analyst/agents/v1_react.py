@@ -1,13 +1,14 @@
-"""Stage 2 agent: the prebuilt tool-calling loop, via LangChain's create_agent.
+"""The chat agent: LangChain's create_agent over the read-only tools.
 
-create_agent wires the classic agent loop for you (it compiles to a LangGraph
+create_agent wires the classic tool-calling loop (it compiles to a LangGraph
 graph under the hood):
 
     model → wants a tool? → run tool → feed result back → ... → final answer
 
-That loop is all an "agent" is at this stage. In Stage 4 we rebuild it by hand
-with LangGraph to see the state machine inside; keeping this version around
-makes the comparison concrete.
+Pass a checkpointer and the graph persists conversations per thread_id — in
+Stage 4 we rebuilt this loop by hand to see that machinery (nodes, conditional
+edge, reducer state); the hand-built version was then removed as redundant,
+but the write-up survives in docs/notes/stage-4.md and the git history.
 
 `model` accepts either a provider string (resolved by llm.init_model, so the
 LLM vendor is a config value, not an import) or an already-built chat model —
@@ -20,6 +21,7 @@ from datetime import datetime
 
 from langchain.agents import create_agent
 from langchain_core.language_models import BaseChatModel
+from langgraph.checkpoint.base import BaseCheckpointSaver
 
 from revenue_analyst.llm import init_model
 from revenue_analyst.pms.provider import PMSProvider
@@ -45,6 +47,7 @@ def build_agent(
     pms: PMSProvider,
     as_of: datetime,
     model: str | BaseChatModel = "openrouter:openai/gpt-4o-mini",
+    checkpointer: BaseCheckpointSaver | None = None,
 ):
     if isinstance(model, str):
         model = init_model(model)
@@ -52,4 +55,5 @@ def build_agent(
         model,
         build_tools(pms, as_of),
         system_prompt=SYSTEM_PROMPT.format(as_of=as_of.date().isoformat()),
+        checkpointer=checkpointer,
     )

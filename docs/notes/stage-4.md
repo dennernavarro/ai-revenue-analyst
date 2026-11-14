@@ -2,7 +2,13 @@
 
 **Built:** `agents/v2_graph.py` — the same agent as v1, but as an explicit
 `StateGraph`: a `model` node, a `tools` node, a conditional edge, and a
-checkpointer. CLI and API now default to it.
+checkpointer. CLI and API defaulted to it for a while.
+
+**Postscript:** once the lesson was learned, v2 was deleted (see git history
+for the implementation). `create_agent` accepts the same `checkpointer`
+argument, so the one real capability — persistent conversations — moved back
+to the one-liner agent, and the old SQLite threads kept working unchanged.
+Keeping two implementations of the same loop was didactic debt, not value.
 
 **What I learned**
 
