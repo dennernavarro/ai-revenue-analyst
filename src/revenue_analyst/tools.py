@@ -1,0 +1,145 @@
+"""LangChain tools over the deterministic analytics layer (Stage 1).
+
+Two lessons live in this file:
+
+1. **The docstring is the interface.** The LLM never sees your code — it sees
+   each tool's name, docstring and argument schema, and decides what to call
+   from those alone. Writing a tool docstring IS prompt engineering: say what
+   the tool answers, what the arguments mean, and what comes back.
+
+2. **Dependency injection without magic.** `build_tools` closes over a
+   `PMSProvider` and a clock (`as_of`), so the tools work identically over the
+   mock PMS today or a real one later, and tests can inject whatever they want.
+
+All tools are read-only and return plain dicts (JSON-friendly), with numbers
+computed by analytics.py — never by the model.
+"""
+
+from __future__ import annotations
+
+from datetime import date, datetime, timedelta
+
+from langchain_core.tools import BaseTool, tool
+
+from revenue_analyst.analytics import on_the_books_nights, performance_summary
+from revenue_analyst.pms.provider import PMSProvider, PropertyNotFoundError
+
+
+def _unknown_property(pms: PMSProvider, property_id: str) -> dict:
+    """A graceful tool error: tell the model what went wrong AND how to recover."""
+    return {
+        "error": f"Unknown property_id {property_id!r}.",
+        "valid_property_ids": [p.id for p in pms.list_properties()],
+    }
+
+
+def build_tools(pms: PMSProvider, as_of: datetime) -> list[BaseTool]:
+    """Build the analyst's toolbox over any PMSProvider.
+
+    `as_of` is the moment "now" for booking-pace questions — injected instead
+    of read from the wall clock so simulated data and tests stay deterministic.
+    """
+
+    @tool
+    def list_properties() -> list[dict]:
+        """List all managed properties with their id, name, city and unit count.
+
+        Call this first to discover the valid property_id values used by every
+        other tool.
+        """
+        return [
+            {"property_id": p.id, "name": p.name, "city": p.city, "units": p.unit_count}
+            for p in pms.list_properties()
+        ]
+
+    @tool
+    def get_performance(property_id: str, start_date: date, end_date: date) -> dict:
+        """Realized performance of one property over a past date range.
+
+        Dates are ISO format (YYYY-MM-DD) and the range is half-open:
+        end_date is NOT included, so a full August is 2026-08-01 to 2026-09-01.
+
+        Returns nights available/sold, occupancy (0..1), total revenue, ADR
+        (average daily rate = revenue / nights sold) and RevPAR (revenue per
+        available night), in the property's currency.
+        """
+        try:
+            prop = pms.get_property(property_id)
+        except PropertyNotFoundError:
+            return _unknown_property(pms, property_id)
+        reservations = pms.get_reservations(property_id, start_date, end_date)
+        summary = performance_summary(prop, reservations, start_date, end_date)
+        data = summary.model_dump(mode="json")
+        data["occupancy"] = round(summary.occupancy, 4)
+        for key in ("revenue", "adr", "revpar"):
+            data[key] = round(data[key], 2)
+        return data
+
+    @tool
+    def get_booking_pace(property_id: str, start_date: date, end_date: date) -> dict:
+        """Booking pace for a (usually future) stay window: how many nights are
+        already sold ("on the books") today and how many were sold 30/60/90
+        days ago.
+
+        Dates are ISO format (YYYY-MM-DD); the range is half-open (end_date
+        excluded). Comparing the values shows pickup — how fast the window is
+        filling. Nights on the books exclude reservations that were cancelled
+        by each as-of moment.
+        """
+        try:
+            prop = pms.get_property(property_id)
+        except PropertyNotFoundError:
+            return _unknown_property(pms, property_id)
+        reservations = pms.get_reservations(property_id, start_date, end_date)
+        capacity = prop.unit_count * (end_date - start_date).days
+
+        pace = []
+        for days_ago in (0, 30, 60, 90):
+            moment = as_of - timedelta(days=days_ago)
+            nights = on_the_books_nights(reservations, moment, start_date, end_date)
+            pace.append(
+                {
+                    "as_of": moment.date().isoformat(),
+                    "nights_on_the_books": nights,
+                    "share_of_capacity": round(nights / capacity, 4) if capacity else 0.0,
+                }
+            )
+
+        return {
+            "property_id": property_id,
+            "start": start_date.isoformat(),
+            "end": end_date.isoformat(),
+            "capacity_nights": capacity,
+            "pace": pace,
+        }
+
+    @tool
+    def get_rates(property_id: str, start_date: date, end_date: date) -> dict:
+        """Published nightly rates of one property for a date range.
+
+        Dates are ISO format (YYYY-MM-DD); the range is half-open (end_date
+        excluded) and is capped at 62 days per call. Returns min/avg/max plus
+        the per-day rate and minimum-stay restriction.
+        """
+        try:
+            pms.get_property(property_id)
+        except PropertyNotFoundError:
+            return _unknown_property(pms, property_id)
+        if (end_date - start_date).days > 62:
+            return {"error": "Date range too long: request at most 62 days per call."}
+        rates = pms.get_daily_rates(property_id, start_date, end_date)
+        if not rates:
+            return {"error": f"No published rates between {start_date} and {end_date}."}
+        values = [r.rate for r in rates]
+        return {
+            "property_id": property_id,
+            "min_rate": min(values),
+            "avg_rate": round(sum(values) / len(values), 2),
+            "max_rate": max(values),
+            "days": [
+                {"day": r.day.isoformat(), "rate": r.rate, "min_stay": r.min_stay}
+                for r in rates
+            ],
+        }
+
+    return [list_properties, get_performance, get_booking_pace, get_rates]

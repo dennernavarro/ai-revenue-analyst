@@ -47,7 +47,7 @@ PYTHONPATH=src python scripts/generate_data.py
 | Stage | Topic | Status |
 |---|---|---|
 | 0 | Foundation: domain, mock PMS, simulator, analytics (no LLM) | ✅ |
-| 1 | LangChain tools over the analytics layer | ⬜ |
+| 1 | LangChain tools over the analytics layer | ✅ |
 | 2 | First agent: `create_agent` + CLI chat + LangSmith tracing | ⬜ |
 | 3 | FastAPI: `/chat` plus plain REST endpoints | ⬜ |
 | 4 | LangGraph basics: explicit graph, state, checkpointing | ⬜ |
