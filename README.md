@@ -62,6 +62,18 @@ OpenRouter speaks the OpenAI API), and direct-provider strings like
 `LANGSMITH_*` variables in `.env` — tracing is optional and everything works
 without it.
 
+## Pricing review with human approval (Stage 5+)
+
+```bash
+uv run python -m revenue_analyst.review mountain-cabins 2026-12-01 2027-01-01
+```
+
+A workflow, not a chat: deterministic analysis and routing, one structured
+LLM slot (the proposal), a policy clamp in code (±25% max), and a LangGraph
+`interrupt` that pauses for your approval. Over HTTP the same flow is
+`POST /reviews` → `POST /reviews/{id}/decision` — the paused graph lives in
+the checkpointer, so the decision can come days later from another process.
+
 ## REST API (Stage 3+)
 
 ```bash
@@ -72,6 +84,7 @@ uv run uvicorn revenue_analyst.api:create_app --factory --reload
 - `GET /properties/{id}/performance?start=2026-08-01&end=2026-09-01`
 - `GET /properties/{id}/pace?start=2026-12-01&end=2027-01-01`
 - `POST /chat` — `{"message": "...", "conversation_id": "optional"}`
+- `POST /reviews` — start a pricing review; `POST /reviews/{id}/decision` approves/rejects
 
 Interactive docs at http://127.0.0.1:8000/docs. The GET endpoints never touch
 the LLM; only `/chat` does — that boundary is the point.
@@ -85,7 +98,7 @@ the LLM; only `/chat` does — that boundary is the point.
 | 2 | First agent: `create_agent` + CLI chat + LangSmith tracing | ✅ |
 | 3 | FastAPI: `/chat` plus plain REST endpoints | ✅ |
 | 4 | LangGraph basics: explicit graph, state, checkpointing | ✅ |
-| 5 | LangGraph control flow: routing, human-in-the-loop approval | ⬜ |
+| 5 | LangGraph control flow: routing, human-in-the-loop approval | ✅ |
 | 6 | Deep Agents: planning, subagents, when they earn their cost | ⬜ |
 | 7 | Docker: containerized deployment | ⬜ |
 | 8 | LangSmith evaluation: datasets, evaluators, regression runs | ⬜ |

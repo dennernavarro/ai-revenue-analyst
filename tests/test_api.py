@@ -79,6 +79,37 @@ def test_inverted_range_is_400(client):
     assert response.status_code == 400
 
 
+def test_review_approval_flow(scripted_model):
+    from revenue_analyst.agents.pricing_review import RateProposal
+
+    model = scripted_model(
+        structured=[RateProposal(adjustment_pct=-10, rationale="slow", expected_effect="pickup")]
+    )
+    app = create_app(pms=MockPMS(DATA_DIR), model=model, checkpointer=InMemorySaver())
+    review_client = TestClient(app)
+
+    started = review_client.post(
+        "/reviews",
+        json={"property_id": "mountain-cabins", "start": "2026-12-01", "end": "2027-01-01"},
+    ).json()
+    assert started["status"] == "pending_approval"
+    assert started["proposal"]["adjustment_pct"] == -10
+
+    decided = review_client.post(
+        f"/reviews/{started['review_id']}/decision", json={"approved": True}
+    ).json()
+    assert decided["status"] == "completed"
+    assert decided["outcome"].startswith("APPROVED")
+
+    # deciding twice → conflict; unknown review → not found
+    again = review_client.post(
+        f"/reviews/{started['review_id']}/decision", json={"approved": True}
+    )
+    assert again.status_code == 409
+    missing = review_client.post("/reviews/nope/decision", json={"approved": True})
+    assert missing.status_code == 404
+
+
 def test_chat_keeps_conversation_memory(client):
     first = client.post("/chat", json={"message": "How many properties?"}).json()
     assert first["reply"] == "We manage 3 properties."

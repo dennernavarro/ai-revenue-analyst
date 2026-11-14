@@ -22,8 +22,10 @@ from fastapi import FastAPI, HTTPException
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, HumanMessage
 from langgraph.checkpoint.base import BaseCheckpointSaver
+from langgraph.types import Command
 from pydantic import BaseModel
 
+from revenue_analyst.agents.pricing_review import build_pricing_review
 from revenue_analyst.agents.v2_graph import build_agent, sqlite_checkpointer
 from revenue_analyst.analytics import (
     BookingPace,
@@ -61,6 +63,25 @@ class ChatResponse(BaseModel):
     tool_calls: list[ToolCallInfo]
 
 
+class ReviewRequest(BaseModel):
+    property_id: str
+    start: date
+    end: date
+
+
+class ReviewDecision(BaseModel):
+    approved: bool
+    note: str = ""
+
+
+class ReviewResponse(BaseModel):
+    review_id: str
+    status: str
+    """"pending_approval", "no_action" or "completed"."""
+    proposal: dict | None = None
+    outcome: str | None = None
+
+
 def _resolve_as_of(pms: PMSProvider) -> datetime:
     """The mock datasets carry their own simulated "today"; real PMS data
     would use the wall clock."""
@@ -82,8 +103,10 @@ def create_app(
     # by default), keyed by thread_id — it survives server restarts, unlike
     # Stage 3's in-process dict. Tests inject an InMemorySaver instead.
     checkpointer = checkpointer or sqlite_checkpointer(settings.state_dir)
-    agent = build_agent(
-        pms, _resolve_as_of(pms), model=model or settings.model, checkpointer=checkpointer
+    as_of = _resolve_as_of(pms)
+    agent = build_agent(pms, as_of, model=model or settings.model, checkpointer=checkpointer)
+    review_workflow = build_pricing_review(
+        pms, as_of, model=model or settings.model, checkpointer=checkpointer
     )
 
     app = FastAPI(title="AI Revenue Analyst", version="0.1.0")
@@ -138,5 +161,42 @@ def create_app(
             reply=message_text(new_messages[-1]),
             tool_calls=tool_calls,
         )
+
+    # --- Stage 5: human-in-the-loop pricing reviews over HTTP ----------------
+    # The interrupt pattern maps cleanly to REST: starting a review either
+    # finishes (healthy pace) or parks a paused graph in the checkpointer;
+    # the decision endpoint resumes it — possibly days later, from another
+    # process.
+
+    @app.post("/reviews")
+    def start_review(request: ReviewRequest) -> ReviewResponse:
+        _property_or_404(request.property_id)
+        _validate_range(request.start, request.end)
+        review_id = uuid.uuid4().hex
+        config = {"configurable": {"thread_id": f"review-{review_id}"}}
+        result = review_workflow.invoke(
+            {"property_id": request.property_id, "start": request.start, "end": request.end},
+            config,
+        )
+        if "__interrupt__" in result:
+            return ReviewResponse(
+                review_id=review_id,
+                status="pending_approval",
+                proposal=result["__interrupt__"][0].value["proposal"],
+            )
+        return ReviewResponse(review_id=review_id, status="no_action", outcome=result["outcome"])
+
+    @app.post("/reviews/{review_id}/decision")
+    def decide_review(review_id: str, decision: ReviewDecision) -> ReviewResponse:
+        config = {"configurable": {"thread_id": f"review-{review_id}"}}
+        state = review_workflow.get_state(config)
+        if not state.values:
+            raise HTTPException(404, f"unknown review {review_id!r}")
+        if not state.next:
+            raise HTTPException(409, "this review is not awaiting a decision")
+        result = review_workflow.invoke(
+            Command(resume={"approved": decision.approved, "note": decision.note}), config
+        )
+        return ReviewResponse(review_id=review_id, status="completed", outcome=result["outcome"])
 
     return app
