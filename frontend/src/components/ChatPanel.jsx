@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { api, chatStream } from '../api.js';
 
 const SUGGESTIONS = ['Compare with last month', 'Show weekend rates', 'Why is pace low?'];
@@ -185,8 +187,8 @@ export default function ChatPanel({ propertyId, propertyName, month, monthLabel,
             );
           }
           return (
-            <div key={i} className="bubble assistant">
-              {m.text}
+            <div key={i} className="bubble assistant md">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.text}</ReactMarkdown>
               {m.streaming && <span className="caret" aria-hidden="true" />}
             </div>
           );
