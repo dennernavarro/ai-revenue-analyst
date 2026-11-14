@@ -17,7 +17,7 @@ from datetime import date, datetime, timedelta
 
 from pydantic import BaseModel
 
-from revenue_analyst.domain import Property, Reservation, ReservationStatus
+from revenue_analyst.domain import DailyRate, Property, Reservation, ReservationStatus
 
 
 class PerformanceSummary(BaseModel):
@@ -116,6 +116,101 @@ def booking_pace(
     return BookingPace(
         property_id=prop.id, start=start, end=end, capacity_nights=capacity, pace=points
     )
+
+
+class CalendarDay(BaseModel):
+    day: date
+    rate: float
+    min_stay: int
+    nights_sold: int
+    capacity: int
+
+
+def daily_calendar(
+    prop: Property,
+    reservations: list[Reservation],
+    rates: list[DailyRate],
+    start: date,
+    end: date,
+) -> list[CalendarDay]:
+    """Per-day occupancy and published rate for [start, end) — the data
+    behind a hotel calendar view."""
+    sold: dict[date, int] = {}
+    for r in reservations:
+        if r.status is not ReservationStatus.CONFIRMED:
+            continue
+        night = max(r.check_in, start)
+        while night < min(r.check_out, end):
+            sold[night] = sold.get(night, 0) + 1
+            night += timedelta(days=1)
+
+    rate_by_day = {r.day: r for r in rates}
+    days = []
+    day = start
+    while day < end:
+        rate = rate_by_day.get(day)
+        days.append(
+            CalendarDay(
+                day=day,
+                rate=rate.rate if rate else 0.0,
+                min_stay=rate.min_stay if rate else 1,
+                nights_sold=sold.get(day, 0),
+                capacity=prop.unit_count,
+            )
+        )
+        day += timedelta(days=1)
+    return days
+
+
+class RoomTypeOccupancy(BaseModel):
+    room_type_id: str
+    name: str
+    units: int
+    from_rate: float
+    """Lowest published rate in the window × the category's multiplier."""
+    nights_sold: int
+    nights_available: int
+    occupancy: float
+
+
+def room_type_occupancy(
+    prop: Property,
+    reservations: list[Reservation],
+    rates: list[DailyRate],
+    start: date,
+    end: date,
+) -> list[RoomTypeOccupancy]:
+    days = (end - start).days
+    if days <= 0:
+        raise ValueError("end must be after start")
+    min_rate = min((r.rate for r in rates), default=0.0)
+    unit_to_type = {u.id: u.room_type_id for u in prop.units}
+
+    sold: dict[str, int] = {}
+    for r in reservations:
+        if r.status is not ReservationStatus.CONFIRMED:
+            continue
+        type_id = unit_to_type.get(r.unit_id)
+        if type_id is not None:
+            sold[type_id] = sold.get(type_id, 0) + _overlap_nights(r, start, end)
+
+    result = []
+    for room_type in prop.room_types:
+        units = sum(1 for u in prop.units if u.room_type_id == room_type.id)
+        available = units * days
+        nights = sold.get(room_type.id, 0)
+        result.append(
+            RoomTypeOccupancy(
+                room_type_id=room_type.id,
+                name=room_type.name,
+                units=units,
+                from_rate=round(min_rate * room_type.rate_multiplier, 2),
+                nights_sold=nights,
+                nights_available=available,
+                occupancy=nights / available if available else 0.0,
+            )
+        )
+    return result
 
 
 def on_the_books_nights(

@@ -1,15 +1,35 @@
 from datetime import date, datetime
+from typing import ClassVar
 
 import pytest
 
-from revenue_analyst.analytics import on_the_books_nights, performance_summary
-from revenue_analyst.domain import Property, Reservation, ReservationStatus, Unit
+from revenue_analyst.analytics import (
+    daily_calendar,
+    on_the_books_nights,
+    performance_summary,
+    room_type_occupancy,
+)
+from revenue_analyst.domain import (
+    DailyRate,
+    Property,
+    Reservation,
+    ReservationStatus,
+    RoomType,
+    Unit,
+)
 
 PROP = Property(
     id="p1",
     name="Test Inn",
     city="Testville",
-    units=[Unit(id="u1", name="Room 1"), Unit(id="u2", name="Room 2")],
+    room_types=[
+        RoomType(id="std", name="Standard", rate_multiplier=1.0),
+        RoomType(id="sui", name="Suite", rate_multiplier=1.5),
+    ],
+    units=[
+        Unit(id="u1", name="Room 1", room_type_id="std"),
+        Unit(id="u2", name="Suite 1", room_type_id="sui"),
+    ],
 )
 
 
@@ -96,3 +116,34 @@ class TestOnTheBooks:
         # earlier in time, the later-cancelled booking was still on the books
         as_of_oct = datetime(2026, 10, 10)
         assert on_the_books_nights(reservations, as_of_oct, self.START, self.END) == 9
+
+
+class TestCalendarAndRoomTypes:
+    START, END = date(2026, 6, 1), date(2026, 6, 4)  # 3 days
+    RATES: ClassVar = [
+        DailyRate(property_id="p1", day=date(2026, 6, 1), rate=100),
+        DailyRate(property_id="p1", day=date(2026, 6, 2), rate=120),
+        DailyRate(property_id="p1", day=date(2026, 6, 3), rate=120, min_stay=2),
+    ]
+    RESERVATIONS: ClassVar = [
+        _res("a", "u1", date(2026, 6, 1), nights=2, total=220),  # nights 1 and 2
+        _res("b", "u2", date(2026, 6, 2), nights=1, total=180),  # night 2
+    ]
+
+    def test_daily_calendar(self):
+        days = daily_calendar(PROP, self.RESERVATIONS, self.RATES, self.START, self.END)
+        assert [(d.day.day, d.nights_sold, d.rate) for d in days] == [
+            (1, 1, 100),
+            (2, 2, 120),
+            (3, 0, 120),
+        ]
+        assert all(d.capacity == 2 for d in days)
+        assert days[2].min_stay == 2
+
+    def test_room_type_occupancy(self):
+        rows = room_type_occupancy(PROP, self.RESERVATIONS, self.RATES, self.START, self.END)
+        standard = next(r for r in rows if r.room_type_id == "std")
+        suite = next(r for r in rows if r.room_type_id == "sui")
+        assert standard.nights_sold == 2 and standard.nights_available == 3
+        assert suite.nights_sold == 1
+        assert suite.from_rate == 150.0  # min rate 100 × multiplier 1.5

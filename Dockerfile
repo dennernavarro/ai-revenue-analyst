@@ -11,12 +11,21 @@ COPY . .
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev
 
-# Stage 2: slim runtime image without uv or build tooling
+# Stage 2: build the web UI
+FROM node:20-slim AS frontend
+WORKDIR /fe
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci --no-fund --no-audit
+COPY frontend/ .
+RUN npm run build
+
+# Stage 3: slim runtime image without uv or build tooling
 FROM python:3.12-slim-bookworm
 WORKDIR /app
 
 RUN useradd --create-home analyst
 COPY --from=builder --chown=analyst:analyst /app /app
+COPY --from=frontend --chown=analyst:analyst /fe/dist /app/frontend/dist
 RUN mkdir -p /app/.state && chown analyst:analyst /app /app/.state
 USER analyst
 

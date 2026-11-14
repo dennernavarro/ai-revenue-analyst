@@ -13,11 +13,25 @@ from enum import Enum
 from pydantic import BaseModel, model_validator
 
 
+class RoomType(BaseModel):
+    """A sellable category of units (Standard Queen, Suite, Cabin...).
+
+    `rate_multiplier` scales the property's base daily rate: the published
+    DailyRate is for the reference category (multiplier 1.0) and each
+    category's price is rate × multiplier.
+    """
+
+    id: str
+    name: str
+    rate_multiplier: float = 1.0
+
+
 class Unit(BaseModel):
     """A bookable unit: a hotel room, a cabin, a villa."""
 
     id: str
     name: str
+    room_type_id: str
 
 
 class Property(BaseModel):
@@ -25,11 +39,17 @@ class Property(BaseModel):
     name: str
     city: str
     currency: str = "USD"
+    room_types: list[RoomType]
     units: list[Unit]
 
     @property
     def unit_count(self) -> int:
         return len(self.units)
+
+    def room_type_of(self, unit_id: str) -> RoomType:
+        by_id = {rt.id: rt for rt in self.room_types}
+        unit = next(u for u in self.units if u.id == unit_id)
+        return by_id[unit.room_type_id]
 
 
 class ReservationStatus(str, Enum):

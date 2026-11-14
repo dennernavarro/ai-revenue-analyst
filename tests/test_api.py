@@ -53,6 +53,30 @@ def test_performance_endpoint(client):
     assert body["adr"] == pytest.approx(510.0)
 
 
+def test_calendar_endpoint(client):
+    response = client.get(
+        "/properties/urban-boutique/calendar",
+        params={"start": "2026-12-01", "end": "2027-01-01"},
+    )
+    assert response.status_code == 200
+    days = response.json()
+    assert len(days) == 31
+    assert all(d["capacity"] == 12 and d["rate"] > 0 for d in days)
+
+
+def test_room_types_endpoint(client):
+    response = client.get(
+        "/properties/urban-boutique/room-types",
+        params={"start": "2026-12-01", "end": "2027-01-01"},
+    )
+    assert response.status_code == 200
+    rows = response.json()
+    assert {r["name"] for r in rows} == {"Standard Queen", "Deluxe King", "Corner Suite"}
+    assert sum(r["units"] for r in rows) == 12
+    suite = next(r for r in rows if r["name"] == "Corner Suite")
+    assert suite.get("from_rate") > 0
+
+
 def test_pace_endpoint(client):
     response = client.get(
         "/properties/mountain-cabins/pace",

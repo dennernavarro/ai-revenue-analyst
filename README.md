@@ -5,7 +5,8 @@
 An open-source AI revenue analyst for short-term rentals and small hotels.
 Ask questions about occupancy, ADR, RevPAR, booking pace and rates in plain
 language; run pricing reviews with human approval; or integrate it through a
-REST API. It ships with a realistic mock property-management system (PMS) and
+REST API. It ships with a web dashboard (occupancy calendar, room categories,
+chat with the analyst), a realistic mock property-management system (PMS) and
 simulated booking data, and is built so a real PMS can be plugged in later
 through a single interface.
 
@@ -17,6 +18,7 @@ LangSmith.
 - Python 3.11+
 - [uv](https://docs.astral.sh/uv/)
 - An LLM API key — by default an [OpenRouter](https://openrouter.ai/keys) key
+- Node 20+ only for frontend development (Docker builds the UI for you)
 
 ## Install
 
@@ -35,7 +37,24 @@ uv run pytest
 
 ## Usage
 
-### Chat with the analyst
+### Web dashboard
+
+```bash
+docker compose up --build
+```
+
+Then open **http://localhost:8000/ui** — property switcher, KPI row, the
+month-by-month occupancy calendar (nightly rate and nights sold per day),
+room-category occupancy, and the chat panel with visible tool calls and
+approve/decline cards for pricing reviews.
+
+For frontend development, run the API (`uv run uvicorn
+revenue_analyst.api:create_app --factory`) and, in `frontend/`,
+`npm install && npm run dev` — Vite serves http://localhost:5173 with a proxy
+to the API. `npm run build` produces `frontend/dist`, which the API serves at
+`/ui` whenever it exists.
+
+### Chat with the analyst (terminal)
 
 ```bash
 uv run python -m revenue_analyst.cli
@@ -75,6 +94,8 @@ Interactive docs at http://127.0.0.1:8000/docs.
 | `GET /properties` | List properties |
 | `GET /properties/{id}/performance?start=&end=` | Occupancy, ADR, RevPAR, revenue (no LLM) |
 | `GET /properties/{id}/pace?start=&end=` | Booking pace vs 30/60/90 days ago (no LLM) |
+| `GET /properties/{id}/calendar?start=&end=` | Per-day rate, min-stay and nights sold (no LLM) |
+| `GET /properties/{id}/room-types?start=&end=` | Categories with units, from-rate and occupancy (no LLM) |
 | `POST /chat` | Talk to the agent; pass `conversation_id` to continue |
 | `POST /reviews` | Start a pricing review (may pause for approval) |
 | `POST /reviews/{id}/decision` | Approve or reject a pending review |
@@ -120,6 +141,8 @@ Everything is set via environment variables / `.env`:
 ## How it works
 
 ```text
+frontend/ (React dashboard, served at /ui)
+        │
 cli.py / review.py / api.py          ← entry points
         │
 agents/  (chat agent · deep agent · pricing-review workflow)

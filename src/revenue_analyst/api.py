@@ -29,9 +29,13 @@ from revenue_analyst.agents.pricing_review import build_pricing_review
 from revenue_analyst.agents.v1_react import build_agent
 from revenue_analyst.analytics import (
     BookingPace,
+    CalendarDay,
     PerformanceSummary,
+    RoomTypeOccupancy,
     booking_pace,
+    daily_calendar,
     performance_summary,
+    room_type_occupancy,
 )
 from revenue_analyst.config import Settings
 from revenue_analyst.domain import Property
@@ -46,6 +50,8 @@ class PropertyInfo(BaseModel):
     name: str
     city: str
     units: int
+    as_of: datetime
+    """The dataset's simulated "today" — the frontend anchors its views on it."""
 
 
 class ChatRequest(BaseModel):
@@ -125,7 +131,10 @@ def create_app(
     @app.get("/properties")
     def list_properties() -> list[PropertyInfo]:
         return [
-            PropertyInfo(property_id=p.id, name=p.name, city=p.city, units=p.unit_count)
+            PropertyInfo(
+                property_id=p.id, name=p.name, city=p.city, units=p.unit_count,
+                as_of=_resolve_as_of(pms),
+            )
             for p in pms.list_properties()
         ]
 
@@ -142,6 +151,24 @@ def create_app(
         _validate_range(start, end)
         reservations = pms.get_reservations(property_id, start, end)
         return booking_pace(prop, reservations, _resolve_as_of(pms), start, end)
+
+    @app.get("/properties/{property_id}/calendar")
+    def property_calendar(property_id: str, start: date, end: date) -> list[CalendarDay]:
+        prop = _property_or_404(property_id)
+        _validate_range(start, end)
+        if (end - start).days > 62:
+            raise HTTPException(400, "request at most 62 days per call")
+        reservations = pms.get_reservations(property_id, start, end)
+        rates = pms.get_daily_rates(property_id, start, end)
+        return daily_calendar(prop, reservations, rates, start, end)
+
+    @app.get("/properties/{property_id}/room-types")
+    def property_room_types(property_id: str, start: date, end: date) -> list[RoomTypeOccupancy]:
+        prop = _property_or_404(property_id)
+        _validate_range(start, end)
+        reservations = pms.get_reservations(property_id, start, end)
+        rates = pms.get_daily_rates(property_id, start, end)
+        return room_type_occupancy(prop, reservations, rates, start, end)
 
     @app.post("/chat")
     def chat(request: ChatRequest) -> ChatResponse:
@@ -199,5 +226,17 @@ def create_app(
             Command(resume={"approved": decision.approved, "note": decision.note}), config
         )
         return ReviewResponse(review_id=review_id, status="completed", outcome=result["outcome"])
+
+    # --- web UI: the built React frontend, when present ----------------------
+    dist = settings.frontend_dist
+    if dist.is_dir():
+        from fastapi.responses import RedirectResponse
+        from fastapi.staticfiles import StaticFiles
+
+        app.mount("/ui", StaticFiles(directory=dist, html=True), name="ui")
+
+        @app.get("/", include_in_schema=False)
+        def index() -> RedirectResponse:
+            return RedirectResponse("/ui/")
 
     return app

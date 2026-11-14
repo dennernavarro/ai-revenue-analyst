@@ -25,11 +25,24 @@ from pathlib import Path
 from pydantic import BaseModel
 
 from revenue_analyst.dataset import PropertyDataset
-from revenue_analyst.domain import DailyRate, Property, Reservation, ReservationStatus, Unit
+from revenue_analyst.domain import (
+    DailyRate,
+    Property,
+    Reservation,
+    ReservationStatus,
+    RoomType,
+    Unit,
+)
 
 HORIZON_START = date(2025, 1, 1)
 HORIZON_END = date(2027, 3, 31)
 AS_OF = datetime(2026, 11, 1, 12, 0)
+
+
+class RoomTypeProfile(BaseModel):
+    name: str
+    count: int
+    rate_multiplier: float = 1.0
 
 
 class PropertyProfile(BaseModel):
@@ -38,8 +51,7 @@ class PropertyProfile(BaseModel):
     city: str
     currency: str = "USD"
     seed: int
-    unit_count: int
-    unit_label: str
+    room_types: list[RoomTypeProfile]
     base_rate: float
     month_factors: list[float]
     """Demand and rate multiplier per calendar month (Jan..Dec)."""
@@ -62,8 +74,7 @@ PROFILES = [
         name="Seaside Villa",
         city="Santa Monica",
         seed=101,
-        unit_count=1,
-        unit_label="Villa",
+        room_types=[RoomTypeProfile(name="Villa", count=1)],
         base_rate=320,
         month_factors=[0.55, 0.6, 0.7, 0.8, 1.0, 1.3, 1.5, 1.5, 1.2, 0.9, 0.6, 0.7],
         dow_factors=[0.8, 0.8, 0.8, 0.9, 1.3, 1.4, 1.0],
@@ -80,8 +91,11 @@ PROFILES = [
         name="Urban Boutique",
         city="Chicago",
         seed=202,
-        unit_count=12,
-        unit_label="Room",
+        room_types=[
+            RoomTypeProfile(name="Standard Queen", count=6, rate_multiplier=0.95),
+            RoomTypeProfile(name="Deluxe King", count=4, rate_multiplier=1.12),
+            RoomTypeProfile(name="Corner Suite", count=2, rate_multiplier=1.4),
+        ],
         base_rate=180,
         month_factors=[0.9, 0.9, 1.0, 1.05, 1.1, 1.1, 1.0, 0.95, 1.15, 1.2, 1.0, 0.85],
         dow_factors=[1.2, 1.3, 1.3, 1.2, 0.9, 0.7, 0.8],
@@ -97,8 +111,7 @@ PROFILES = [
         name="Mountain Cabins",
         city="Aspen",
         seed=303,
-        unit_count=4,
-        unit_label="Cabin",
+        room_types=[RoomTypeProfile(name="Cabin", count=4)],
         base_rate=240,
         month_factors=[1.5, 1.4, 1.1, 0.7, 0.6, 0.8, 1.0, 1.0, 0.8, 0.7, 0.9, 1.4],
         dow_factors=[0.8, 0.7, 0.7, 0.9, 1.4, 1.5, 1.0],
@@ -151,16 +164,25 @@ def _build_rates(profile: PropertyProfile, property_id: str) -> list[DailyRate]:
 def generate_dataset(profile: PropertyProfile) -> PropertyDataset:
     rng = random.Random(profile.seed)
 
-    units = [
-        Unit(
-            id=f"{profile.slug}-u{i + 1}",
-            name=profile.unit_label if profile.unit_count == 1 else f"{profile.unit_label} {i + 1}",
+    room_types = []
+    units = []
+    for rt_profile in profile.room_types:
+        rt_id = f"{profile.slug}-{rt_profile.name.lower().replace(' ', '-')}"
+        room_types.append(
+            RoomType(id=rt_id, name=rt_profile.name, rate_multiplier=rt_profile.rate_multiplier)
         )
-        for i in range(profile.unit_count)
-    ]
+        single = rt_profile.count == 1 and len(profile.room_types) == 1
+        for i in range(rt_profile.count):
+            units.append(
+                Unit(
+                    id=f"{rt_id}-u{i + 1}",
+                    name=rt_profile.name if single else f"{rt_profile.name} {i + 1}",
+                    room_type_id=rt_id,
+                )
+            )
     prop = Property(
         id=profile.slug, name=profile.name, city=profile.city,
-        currency=profile.currency, units=units,
+        currency=profile.currency, room_types=room_types, units=units,
     )
 
     daily_rates = _build_rates(profile, prop.id)
@@ -210,6 +232,7 @@ def generate_dataset(profile: PropertyProfile) -> PropertyDataset:
                 occupied[unit_id].update(stay)
 
             counter += 1
+            multiplier = prop.room_type_of(unit_id).rate_multiplier
             reservations.append(
                 Reservation(
                     id=f"{profile.slug}-r{counter:05d}",
@@ -220,7 +243,7 @@ def generate_dataset(profile: PropertyProfile) -> PropertyDataset:
                     booked_at=booked_at,
                     status=status,
                     channel=channel[0],
-                    total_amount=round(sum(rate_by_day[d] for d in stay), 2),
+                    total_amount=round(sum(rate_by_day[d] for d in stay) * multiplier, 2),
                     cancelled_at=cancelled_at,
                 )
             )
