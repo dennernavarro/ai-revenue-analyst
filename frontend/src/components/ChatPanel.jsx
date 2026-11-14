@@ -19,6 +19,7 @@ export default function ChatPanel({
   monthLabel,
   reviewTick,
   onRatesPublished,
+  onPreviewDays,
 }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
@@ -87,6 +88,7 @@ export default function ChatPanel({
       const res = await api.startReview(propertyId, month.start, month.end);
       if (res.status === 'pending_approval') {
         append({ kind: 'review', review: res, resolved: false });
+        onPreviewDays?.(res.target_days ?? []);
       } else {
         append({ kind: 'assistant', text: res.outcome });
       }
@@ -114,6 +116,7 @@ export default function ChatPanel({
         prev.map((m, i) => (i === index ? { ...m, resolved: true, approved } : m)),
       );
       append({ kind: 'assistant', text: res.outcome });
+      onPreviewDays?.([]);
       if (approved && res.outcome.includes('PUBLISHED')) onRatesPublished?.();
     } catch (err) {
       append({ kind: 'assistant', text: `Decision failed: ${err.message}` });
@@ -177,6 +180,12 @@ export default function ChatPanel({
                   {m.review.proposal.adjustment_pct > 0 ? '+' : ''}
                   {m.review.proposal.adjustment_pct}% on published rates
                 </div>
+                {m.review.target_days?.length > 0 && (
+                  <p className="review-body targets">
+                    Applies to {m.review.target_days.length} slow-pacing dates — highlighted on
+                    the calendar. Well-selling dates keep their price.
+                  </p>
+                )}
                 <p className="review-body">{m.review.proposal.rationale}</p>
                 {!m.resolved && (
                   <div className="review-actions">

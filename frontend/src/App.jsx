@@ -16,6 +16,7 @@ export default function App() {
   const [error, setError] = useState(null);
   const [reviewTick, setReviewTick] = useState(0);
   const [dataTick, setDataTick] = useState(0);
+  const [previewDays, setPreviewDays] = useState([]);
 
   const selected = properties.find((p) => p.property_id === selectedId);
   const asOf = selected ? new Date(selected.as_of) : null;
@@ -91,7 +92,10 @@ export default function App() {
         <Sidebar
           properties={properties}
           selectedId={selectedId}
-          onSelect={(id) => setSelectedId(id)}
+          onSelect={(id) => {
+            setSelectedId(id);
+            setPreviewDays([]);
+          }}
         />
 
         <main className="content">
@@ -103,9 +107,16 @@ export default function App() {
           />
           <CalendarCard
             days={calendar}
+            previewDays={previewDays}
             monthLabel={view?.monthLabel}
-            onPrev={() => setMonthOffset((v) => v - 1)}
-            onNext={() => setMonthOffset((v) => v + 1)}
+            onPrev={() => {
+              setMonthOffset((v) => v - 1);
+              setPreviewDays([]);
+            }}
+            onNext={() => {
+              setMonthOffset((v) => v + 1);
+              setPreviewDays([]);
+            }}
           />
           <RoomTypesCard roomTypes={roomTypes} monthLabel={view?.monthLabel} />
         </main>
@@ -119,6 +130,7 @@ export default function App() {
             monthLabel={view.monthLabel}
             reviewTick={reviewTick}
             onRatesPublished={() => setDataTick((t) => t + 1)}
+            onPreviewDays={setPreviewDays}
           />
         )}
       </div>

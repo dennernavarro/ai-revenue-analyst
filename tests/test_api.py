@@ -118,6 +118,8 @@ def test_review_approval_flow(scripted_model):
     ).json()
     assert started["status"] == "pending_approval"
     assert started["proposal"]["adjustment_pct"] == -10
+    assert 0 < len(started["target_days"]) <= 31
+    assert all(d.startswith("2026-12-") for d in started["target_days"])
 
     decided = review_client.post(
         f"/reviews/{started['review_id']}/decision", json={"approved": True}

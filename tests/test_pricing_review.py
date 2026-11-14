@@ -67,7 +67,10 @@ def test_rejection_is_recorded(scripted_model):
     assert resumed["outcome"].startswith("REJECTED")
 
 
-def test_approval_publishes_rates_through_the_write_port(scripted_model):
+def test_approval_publishes_only_to_slow_pacing_days(scripted_model):
+    from revenue_analyst.agents.pricing_review import HEALTHY_OTB_SHARE
+    from revenue_analyst.analytics import daily_calendar
+
     pms = MockPMS(DATA_DIR)
     proposal = RateProposal(adjustment_pct=-10, rationale="slow", expected_effect="pickup")
     workflow = build_pricing_review(
@@ -78,14 +81,28 @@ def test_approval_publishes_rates_through_the_write_port(scripted_model):
         publisher=pms,
     )
     window = (WEAK_WINDOW["start"], WEAK_WINDOW["end"])
-    before = {r.day: r.rate for r in pms.get_daily_rates("mountain-cabins", *window)}
+    prop = pms.get_property("mountain-cabins")
+    calendar = daily_calendar(
+        prop,
+        pms.get_reservations(prop.id, *window),
+        pms.get_daily_rates(prop.id, *window),
+        *window,
+    )
+    expected = {
+        d.day: (
+            float(round(d.rate * 0.9))
+            if d.nights_sold / d.capacity < HEALTHY_OTB_SHARE
+            else d.rate
+        )
+        for d in calendar
+    }
 
     workflow.invoke(WEAK_WINDOW, CONFIG)
     resumed = workflow.invoke(Command(resume={"approved": True, "note": ""}), CONFIG)
 
     assert resumed["outcome"].startswith("APPROVED & PUBLISHED: -10.0%")
     after = {r.day: r.rate for r in pms.get_daily_rates("mountain-cabins", *window)}
-    assert all(after[day] == float(round(rate * 0.9)) for day, rate in before.items())
+    assert after == expected
 
 
 def test_rejection_leaves_rates_untouched(scripted_model):
@@ -108,7 +125,8 @@ def test_rejection_leaves_rates_untouched(scripted_model):
 def test_published_rates_never_go_below_the_property_floor(scripted_model):
     """Seaside Villa: floor $192 (base 320 × 0.6). A -25% cut would take the
     $224 weekdays to $168 — publication must stop at the floor, while the
-    $280 weekends land at $210 untouched by it."""
+    $280 weekends land at $210 above it. The sold-out nights (Dec 1–3, 1/1
+    sold) must keep their $224: never discount a day that is selling."""
     pms = MockPMS(DATA_DIR)
     window = {"property_id": "seaside-villa", "start": date(2026, 12, 1), "end": date(2027, 1, 1)}
     proposal = RateProposal(adjustment_pct=-25, rationale="deep cut", expected_effect="volume")
@@ -116,13 +134,22 @@ def test_published_rates_never_go_below_the_property_floor(scripted_model):
         pms, AS_OF, model=scripted_model(structured=[proposal]),
         checkpointer=InMemorySaver(), publisher=pms,
     )
-    workflow.invoke(window, CONFIG)
+    paused = workflow.invoke(window, CONFIG)
+    target_days = paused["__interrupt__"][0].value["target_days"]
+    assert "2026-12-01" not in target_days  # sold out → not a target
+    assert "2026-12-07" in target_days
+
     resumed = workflow.invoke(Command(resume={"approved": True, "note": ""}), CONFIG)
 
-    assert "bounded by the property's rate limits" in resumed["outcome"]
-    rates = {r.day: r.rate for r in pms.get_daily_rates("seaside-villa", window["start"], window["end"])}
-    assert min(rates.values()) == 192.0  # the floor, not 168
-    assert max(rates.values()) == 210.0  # 280 × 0.75, above the floor
+    assert "bounded by the rate limits" in resumed["outcome"]
+    assert "well-selling dates kept their price" in resumed["outcome"]
+    rates = {
+        r.day.isoformat(): r.rate
+        for r in pms.get_daily_rates("seaside-villa", window["start"], window["end"])
+    }
+    assert rates["2026-12-01"] == 224.0  # sold out: untouched
+    assert rates["2026-12-07"] == 192.0  # slow weekday: floor, not 168
+    assert rates["2026-12-04"] == 210.0  # slow weekend: 280 × 0.75
 
 
 def test_exhausted_discounts_skip_the_llm_entirely(scripted_model):

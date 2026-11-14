@@ -1,6 +1,7 @@
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
-export default function CalendarCard({ days, monthLabel, onPrev, onNext }) {
+export default function CalendarCard({ days, previewDays = [], monthLabel, onPrev, onNext }) {
+  const preview = new Set(previewDays);
   const blanks = days.length ? new Date(`${days[0].day}T00:00:00Z`).getUTCDay() : 0;
 
   return (
@@ -39,10 +40,13 @@ export default function CalendarCard({ days, monthLabel, onPrev, onNext }) {
         {days.map((d) => {
           const share = d.capacity ? d.nights_sold / d.capacity : 0;
           const alpha = share === 0 ? 0 : 0.11 + share * 0.43;
+          const classes = ['cal-cell'];
+          if (share) classes.push('filled');
+          if (preview.has(d.day)) classes.push('preview');
           return (
             <div
               key={d.day}
-              className={share ? 'cal-cell filled' : 'cal-cell'}
+              className={classes.join(' ')}
               style={share ? { background: `rgba(14, 107, 83, ${alpha})` } : undefined}
               title={`${d.day}: ${d.nights_sold}/${d.capacity} sold at $${d.rate}`}
             >

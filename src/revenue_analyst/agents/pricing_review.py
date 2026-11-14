@@ -38,7 +38,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.types import interrupt
 from pydantic import BaseModel, Field
 
-from revenue_analyst.analytics import booking_pace, performance_summary
+from revenue_analyst.analytics import booking_pace, daily_calendar, performance_summary
 from revenue_analyst.llm import init_model
 from revenue_analyst.pms.provider import PMSProvider, RatePublisher
 
@@ -82,6 +82,10 @@ current rates are already close to the floor, propose only the small cut that
 still fits (or focus the rationale on non-price levers) — repeated deep
 discounts on already-discounted rates destroy revenue.
 
+Your adjustment will be applied ONLY to the dates in
+"day_targeting.target_days" (those pacing below the threshold); dates already
+selling well keep their price, so reason about those slow dates.
+
 {analysis}
 """
 
@@ -115,6 +119,17 @@ def build_pricing_review(
         # the property's hard floor — a deterministic fact, not a judgment.
         floor_reached = bool(rates) and avg_rate <= prop.min_rate * 1.02
 
+        # Day-level targeting: an adjustment only makes sense on dates that
+        # are pacing BELOW the threshold. Dates already selling well — or
+        # sold out — keep their price; discounting them burns revenue.
+        window_reservations = pms.get_reservations(prop.id, start, end)
+        calendar = daily_calendar(prop, window_reservations, rates, start, end)
+        target_days = [
+            day.day.isoformat()
+            for day in calendar
+            if day.capacity and day.nights_sold / day.capacity < HEALTHY_OTB_SHARE
+        ]
+
         return {
             "analysis": {
                 "window": {"start": start.isoformat(), "end": end.isoformat()},
@@ -128,6 +143,11 @@ def build_pricing_review(
                 else None,
                 "rate_limits": {"min": prop.min_rate, "max": prop.max_rate},
                 "rate_floor_reached": floor_reached,
+                "day_targeting": {
+                    "threshold": HEALTHY_OTB_SHARE,
+                    "target_days": target_days,
+                    "well_selling_days": len(calendar) - len(target_days),
+                },
                 "same_window_last_year": {
                     "occupancy": round(last_year.occupancy, 4),
                     "adr": round(last_year.adr, 2),
@@ -186,6 +206,7 @@ def build_pricing_review(
             {
                 "proposal": state["proposal"],
                 "window": state["analysis"]["window"],
+                "target_days": state["analysis"]["day_targeting"]["target_days"],
                 "on_the_books": (
                     f"{current['nights_on_the_books']} nights "
                     f"({current['share_of_capacity']:.0%} of capacity)"
@@ -215,10 +236,13 @@ def build_pricing_review(
 
         prop = pms.get_property(state["property_id"])
         factor = 1 + pct / 100
+        targets = set(state["analysis"]["day_targeting"]["target_days"])
         current = pms.get_daily_rates(state["property_id"], state["start"], state["end"])
         new_rates = []
         bounded = 0
         for r in current:
+            if r.day.isoformat() not in targets:
+                continue  # selling at/above threshold: price stays
             raw = float(round(r.rate * factor))
             clamped = max(raw, prop.min_rate)
             if prop.max_rate is not None:
@@ -226,17 +250,28 @@ def build_pricing_review(
             if clamped != raw:
                 bounded += 1
             new_rates.append(r.model_copy(update={"rate": clamped}))
+        if not new_rates:
+            return {
+                "outcome": (
+                    f"APPROVED, nothing to publish: every date in {window} is already "
+                    f"selling at or above {HEALTHY_OTB_SHARE:.0%}.{note}"
+                )
+            }
         receipt = publisher.publish_rates(state["property_id"], new_rates)
+        kept = len(current) - receipt.days
+        kept_note = (
+            f" — {kept} well-selling dates kept their price" if kept else ""
+        )
         limits_note = (
-            f" ({bounded} of {receipt.days} days bounded by the property's rate limits "
+            f" ({bounded} of {receipt.days} bounded by the rate limits "
             f"${prop.min_rate:.0f}–${prop.max_rate:.0f})"
             if bounded
             else ""
         )
         return {
             "outcome": (
-                f"APPROVED & PUBLISHED: {pct:+.1f}% applied to {receipt.days} nightly rates "
-                f"for {window}{limits_note}.{note}"
+                f"APPROVED & PUBLISHED: {pct:+.1f}% applied to {receipt.days} of "
+                f"{len(current)} nightly rates for {window}{kept_note}{limits_note}.{note}"
             )
         }
 

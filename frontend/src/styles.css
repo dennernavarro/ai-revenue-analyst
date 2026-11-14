@@ -313,6 +313,23 @@ button:disabled {
   border-color: transparent;
 }
 
+.cal-cell.preview {
+  box-shadow: inset 0 0 0 2px #ef9f27;
+  animation: preview-pulse 1.6s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cal-cell.preview {
+    animation: none;
+  }
+}
+
+@keyframes preview-pulse {
+  50% {
+    box-shadow: inset 0 0 0 2px rgba(239, 159, 39, 0.35);
+  }
+}
+
 .cal-top {
   display: flex;
   justify-content: space-between;

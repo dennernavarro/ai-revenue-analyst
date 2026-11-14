@@ -93,6 +93,9 @@ class ReviewResponse(BaseModel):
     status: str
     """"pending_approval", "no_action" or "completed"."""
     proposal: dict | None = None
+    target_days: list[str] | None = None
+    """The dates the adjustment will touch (slow-pacing days only) — lets the
+    UI preview the impact before approval."""
     outcome: str | None = None
 
 
@@ -308,11 +311,13 @@ def create_app(
             config,
         )
         if "__interrupt__" in result:
-            proposal = result["__interrupt__"][0].value["proposal"]
-            pending_reviews[key] = {"review_id": review_id, "proposal": proposal}
-            return ReviewResponse(
-                review_id=review_id, status="pending_approval", proposal=proposal
-            )
+            payload = result["__interrupt__"][0].value
+            pending_reviews[key] = {
+                "review_id": review_id,
+                "proposal": payload["proposal"],
+                "target_days": payload.get("target_days"),
+            }
+            return ReviewResponse(status="pending_approval", **pending_reviews[key])
         return ReviewResponse(review_id=review_id, status="no_action", outcome=result["outcome"])
 
     @app.post("/reviews/{review_id}/decision")
