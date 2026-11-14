@@ -17,11 +17,11 @@ computed by analytics.py — never by the model.
 
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 
 from langchain_core.tools import BaseTool, tool
 
-from revenue_analyst.analytics import on_the_books_nights, performance_summary
+from revenue_analyst.analytics import booking_pace, performance_summary
 from revenue_analyst.pms.provider import PMSProvider, PropertyNotFoundError
 
 
@@ -91,27 +91,8 @@ def build_tools(pms: PMSProvider, as_of: datetime) -> list[BaseTool]:
         except PropertyNotFoundError:
             return _unknown_property(pms, property_id)
         reservations = pms.get_reservations(property_id, start_date, end_date)
-        capacity = prop.unit_count * (end_date - start_date).days
-
-        pace = []
-        for days_ago in (0, 30, 60, 90):
-            moment = as_of - timedelta(days=days_ago)
-            nights = on_the_books_nights(reservations, moment, start_date, end_date)
-            pace.append(
-                {
-                    "as_of": moment.date().isoformat(),
-                    "nights_on_the_books": nights,
-                    "share_of_capacity": round(nights / capacity, 4) if capacity else 0.0,
-                }
-            )
-
-        return {
-            "property_id": property_id,
-            "start": start_date.isoformat(),
-            "end": end_date.isoformat(),
-            "capacity_nights": capacity,
-            "pace": pace,
-        }
+        result = booking_pace(prop, reservations, as_of, start_date, end_date)
+        return result.model_dump(mode="json")
 
     @tool
     def get_rates(property_id: str, start_date: date, end_date: date) -> dict:

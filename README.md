@@ -58,6 +58,20 @@ OpenRouter speaks the OpenAI API), and direct-provider strings like
 `LANGSMITH_*` variables in `.env` — tracing is optional and everything works
 without it.
 
+## REST API (Stage 3+)
+
+```bash
+uv run uvicorn revenue_analyst.api:create_app --factory --reload
+```
+
+- `GET /properties`
+- `GET /properties/{id}/performance?start=2026-08-01&end=2026-09-01`
+- `GET /properties/{id}/pace?start=2026-12-01&end=2027-01-01`
+- `POST /chat` — `{"message": "...", "conversation_id": "optional"}`
+
+Interactive docs at http://127.0.0.1:8000/docs. The GET endpoints never touch
+the LLM; only `/chat` does — that boundary is the point.
+
 ## Learning roadmap
 
 | Stage | Topic | Status |
@@ -65,7 +79,7 @@ without it.
 | 0 | Foundation: domain, mock PMS, simulator, analytics (no LLM) | ✅ |
 | 1 | LangChain tools over the analytics layer | ✅ |
 | 2 | First agent: `create_agent` + CLI chat + LangSmith tracing | ✅ |
-| 3 | FastAPI: `/chat` plus plain REST endpoints | ⬜ |
+| 3 | FastAPI: `/chat` plus plain REST endpoints | ✅ |
 | 4 | LangGraph basics: explicit graph, state, checkpointing | ⬜ |
 | 5 | LangGraph control flow: routing, human-in-the-loop approval | ⬜ |
 | 6 | Deep Agents: planning, subagents, when they earn their cost | ⬜ |

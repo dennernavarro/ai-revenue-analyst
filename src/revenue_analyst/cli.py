@@ -18,14 +18,8 @@ from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 
 from revenue_analyst.agents.v1_react import build_agent
 from revenue_analyst.config import Settings
+from revenue_analyst.llm import message_text
 from revenue_analyst.pms.mock import MockPMS
-
-
-def _text(message: BaseMessage) -> str:
-    """Anthropic returns content as a list of blocks; flatten to plain text."""
-    if isinstance(message.content, str):
-        return message.content
-    return "".join(b.get("text", "") for b in message.content if isinstance(b, dict))
 
 
 def _print_turn(new_messages: list[BaseMessage]) -> None:
@@ -33,7 +27,7 @@ def _print_turn(new_messages: list[BaseMessage]) -> None:
         if isinstance(message, AIMessage):
             for call in message.tool_calls:
                 print(f"  ⚙ {call['name']}({call['args']})")
-    print(f"\nanalyst> {_text(new_messages[-1])}\n")
+    print(f"\nanalyst> {message_text(new_messages[-1])}\n")
 
 
 def main() -> None:

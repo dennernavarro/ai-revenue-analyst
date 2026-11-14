@@ -13,7 +13,7 @@ Conventions:
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 from pydantic import BaseModel
 
@@ -69,6 +69,52 @@ def performance_summary(
         revenue=revenue,
         adr=revenue / nights_sold if nights_sold else 0.0,
         revpar=revenue / nights_available,
+    )
+
+
+class PacePoint(BaseModel):
+    as_of: date
+    nights_on_the_books: int
+    share_of_capacity: float
+
+
+class BookingPace(BaseModel):
+    property_id: str
+    start: date
+    end: date
+    capacity_nights: int
+    pace: list[PacePoint]
+
+
+def booking_pace(
+    prop: Property,
+    reservations: list[Reservation],
+    as_of: datetime,
+    start: date,
+    end: date,
+    lookback_days: tuple[int, ...] = (0, 30, 60, 90),
+) -> BookingPace:
+    """On-the-books nights for [start, end) at several past as-of moments.
+
+    Comparing the points shows pickup: how fast the window has been filling.
+    """
+    if end <= start:
+        raise ValueError("end must be after start")
+    capacity = prop.unit_count * (end - start).days
+
+    points = []
+    for days_ago in lookback_days:
+        moment = as_of - timedelta(days=days_ago)
+        nights = on_the_books_nights(reservations, moment, start, end)
+        points.append(
+            PacePoint(
+                as_of=moment.date(),
+                nights_on_the_books=nights,
+                share_of_capacity=round(nights / capacity, 4),
+            )
+        )
+    return BookingPace(
+        property_id=prop.id, start=start, end=end, capacity_nights=capacity, pace=points
     )
 
 
