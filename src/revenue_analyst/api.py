@@ -58,6 +58,9 @@ class PropertyInfo(BaseModel):
 class ChatRequest(BaseModel):
     message: str
     conversation_id: str | None = None
+    property_id: str | None = None
+    """The property selected in the dashboard, injected as conversation
+    context so "here" / "this property" resolve to it."""
 
 
 class ToolCallInfo(BaseModel):
@@ -88,6 +91,23 @@ class ReviewResponse(BaseModel):
     """"pending_approval", "no_action" or "completed"."""
     proposal: dict | None = None
     outcome: str | None = None
+
+
+def _chat_input(pms: PMSProvider, request: ChatRequest) -> str:
+    """Prefix the user message with the dashboard's selected property, so the
+    agent answers about it directly instead of asking which property or
+    sweeping all of them."""
+    if not request.property_id:
+        return request.message
+    try:
+        prop = pms.get_property(request.property_id)
+    except PropertyNotFoundError:
+        return request.message
+    return (
+        f"[Dashboard context: the user is currently viewing {prop.name} "
+        f"(property_id: {prop.id}). Words like 'here' or 'this property' refer "
+        f"to it.]\n\n{request.message}"
+    )
 
 
 def _resolve_as_of(pms: PMSProvider) -> datetime:
@@ -169,7 +189,7 @@ def create_app(
         def events():
             yield sse({"type": "start", "conversation_id": conversation_id})
             stream = agent.stream(
-                {"messages": [HumanMessage(request.message)]},
+                {"messages": [HumanMessage(_chat_input(pms, request))]},
                 config,
                 stream_mode=["updates", "messages"],
             )
@@ -227,7 +247,7 @@ def create_app(
         conversation_id = request.conversation_id or uuid.uuid4().hex
         config = {"configurable": {"thread_id": conversation_id}}
         previous = len(agent.get_state(config).values.get("messages", []))
-        result = agent.invoke({"messages": [HumanMessage(request.message)]}, config)
+        result = agent.invoke({"messages": [HumanMessage(_chat_input(pms, request))]}, config)
 
         new_messages = result["messages"][previous + 1 :]
         tool_calls = [

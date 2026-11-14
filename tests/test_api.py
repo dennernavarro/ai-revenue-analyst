@@ -134,6 +134,23 @@ def test_review_approval_flow(scripted_model):
     assert missing.status_code == 404
 
 
+def test_chat_input_injects_selected_property_context():
+    from revenue_analyst.api import ChatRequest, _chat_input
+
+    pms = MockPMS(DATA_DIR)
+    plain = ChatRequest(message="How was August here?")
+    assert _chat_input(pms, plain) == "How was August here?"
+
+    selected = ChatRequest(message="How was August here?", property_id="seaside-villa")
+    contextualized = _chat_input(pms, selected)
+    assert contextualized.startswith("[Dashboard context:")
+    assert "Seaside Villa" in contextualized
+    assert contextualized.endswith("How was August here?")
+
+    unknown = ChatRequest(message="hi", property_id="nope")
+    assert _chat_input(pms, unknown) == "hi"
+
+
 def test_chat_stream_emits_tool_token_and_done_events(client):
     response = client.post("/chat/stream", json={"message": "How many properties?"})
     assert response.status_code == 200

@@ -15,11 +15,15 @@ const post = (path, body) =>
     body: JSON.stringify(body),
   });
 
-export async function chatStream(message, conversationId, onEvent) {
+export async function chatStream(message, conversationId, propertyId, onEvent) {
   const res = await fetch('/chat/stream', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ message, conversation_id: conversationId }),
+    body: JSON.stringify({
+      message,
+      conversation_id: conversationId,
+      property_id: propertyId,
+    }),
   });
   if (!res.ok) throw new Error((await res.text()) || res.statusText);
   const reader = res.body.getReader();

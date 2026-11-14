@@ -32,7 +32,7 @@ export default function ChatPanel({ propertyId, propertyName, month, monthLabel,
     setBusy(true);
     append({ kind: 'user', text: question });
     try {
-      await chatStream(question, conversationId.current, (event) => {
+      await chatStream(question, conversationId.current, propertyId, (event) => {
         if (event.type === 'start') {
           conversationId.current = event.conversation_id;
         } else if (event.type === 'tool') {
