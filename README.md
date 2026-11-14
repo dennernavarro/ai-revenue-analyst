@@ -143,6 +143,14 @@ uv run pytest        # full suite, runs offline (agents tested with fake models)
 uv run ruff check .  # lint
 ```
 
+Behavioral evaluation (needs an LLM key; ground truth is computed from the
+deterministic layer, so the dataset never drifts from the simulator):
+
+```bash
+uv run python -m revenue_analyst.evals              # local run + pass/fail report
+uv run python -m revenue_analyst.evals --langsmith  # also log a LangSmith experiment
+```
+
 This project was built incrementally as a learning journey through modern
 agent tooling — the stage-by-stage write-ups, including what hurt and what
 each framework actually buys you, live in [docs/notes/](docs/notes/).
