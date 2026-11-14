@@ -67,6 +67,44 @@ def test_rejection_is_recorded(scripted_model):
     assert resumed["outcome"].startswith("REJECTED")
 
 
+def test_approval_publishes_rates_through_the_write_port(scripted_model):
+    pms = MockPMS(DATA_DIR)
+    proposal = RateProposal(adjustment_pct=-10, rationale="slow", expected_effect="pickup")
+    workflow = build_pricing_review(
+        pms,
+        AS_OF,
+        model=scripted_model(structured=[proposal]),
+        checkpointer=InMemorySaver(),
+        publisher=pms,
+    )
+    window = (WEAK_WINDOW["start"], WEAK_WINDOW["end"])
+    before = {r.day: r.rate for r in pms.get_daily_rates("mountain-cabins", *window)}
+
+    workflow.invoke(WEAK_WINDOW, CONFIG)
+    resumed = workflow.invoke(Command(resume={"approved": True, "note": ""}), CONFIG)
+
+    assert resumed["outcome"].startswith("APPROVED & PUBLISHED: -10.0%")
+    after = {r.day: r.rate for r in pms.get_daily_rates("mountain-cabins", *window)}
+    assert all(after[day] == float(round(rate * 0.9)) for day, rate in before.items())
+
+
+def test_rejection_leaves_rates_untouched(scripted_model):
+    pms = MockPMS(DATA_DIR)
+    proposal = RateProposal(adjustment_pct=-10, rationale="slow", expected_effect="pickup")
+    workflow = build_pricing_review(
+        pms,
+        AS_OF,
+        model=scripted_model(structured=[proposal]),
+        checkpointer=InMemorySaver(),
+        publisher=pms,
+    )
+    window = (WEAK_WINDOW["start"], WEAK_WINDOW["end"])
+    before = [r.rate for r in pms.get_daily_rates("mountain-cabins", *window)]
+    workflow.invoke(WEAK_WINDOW, CONFIG)
+    workflow.invoke(Command(resume={"approved": False, "note": ""}), CONFIG)
+    assert [r.rate for r in pms.get_daily_rates("mountain-cabins", *window)] == before
+
+
 def test_out_of_bounds_proposal_is_clamped_by_policy(scripted_model):
     # The "LLM" proposes -60%; policy caps at ±25% regardless.
     proposal = RateProposal(adjustment_pct=-60, rationale="panic", expected_effect="volume")

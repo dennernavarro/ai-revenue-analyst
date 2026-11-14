@@ -172,6 +172,30 @@ def test_chat_stream_emits_tool_token_and_done_events(client):
     assert "3 properties" in reply
 
 
+def test_duplicate_review_requests_return_the_same_pending_review(scripted_model):
+    from revenue_analyst.agents.pricing_review import RateProposal
+
+    model = scripted_model(
+        structured=[
+            RateProposal(adjustment_pct=-10, rationale="slow", expected_effect="pickup"),
+            RateProposal(adjustment_pct=-20, rationale="second", expected_effect="should not run"),
+        ]
+    )
+    app = create_app(pms=MockPMS(DATA_DIR), model=model, checkpointer=InMemorySaver())
+    review_client = TestClient(app)
+    body = {"property_id": "mountain-cabins", "start": "2026-12-01", "end": "2027-01-01"}
+
+    first = review_client.post("/reviews", json=body).json()
+    duplicate = review_client.post("/reviews", json=body).json()
+    assert duplicate["review_id"] == first["review_id"]
+    assert duplicate["proposal"] == first["proposal"]
+
+    # after the decision, a new review for the same window is allowed again
+    review_client.post(f"/reviews/{first['review_id']}/decision", json={"approved": False})
+    fresh = review_client.post("/reviews", json=body).json()
+    assert fresh["review_id"] != first["review_id"]
+
+
 def test_chat_keeps_conversation_memory(client):
     first = client.post("/chat", json={"message": "How many properties?"}).json()
     assert first["reply"] == "We manage 3 properties."

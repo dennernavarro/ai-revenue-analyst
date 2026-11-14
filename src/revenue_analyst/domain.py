@@ -97,3 +97,13 @@ class DailyRate(BaseModel):
     day: date
     rate: float
     min_stay: int = 1
+
+
+class RatePublication(BaseModel):
+    """Receipt returned by a RatePublisher after rates were changed."""
+
+    property_id: str
+    days: int
+    start: date
+    end: date
+    published_at: datetime

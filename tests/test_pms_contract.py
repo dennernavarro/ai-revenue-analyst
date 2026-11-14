@@ -56,6 +56,29 @@ def test_narrow_window_is_subset_of_wide(provider):
         assert narrow_ids <= wide_ids
 
 
+def test_rate_publication_applies_in_memory_only(provider):
+    """The write port: published rates are visible through get_daily_rates,
+    scoped to the published days, and never touch the seed files (a fresh
+    provider instance still sees the original rates)."""
+    window = (date(2026, 12, 1), date(2026, 12, 4))
+    prop = provider.list_properties()[0]
+    before = provider.get_daily_rates(prop.id, *window)
+    original = [r.rate for r in before]
+    outside_before = provider.get_daily_rates(prop.id, date(2026, 12, 4), date(2026, 12, 5))
+
+    new_rates = [r.model_copy(update={"rate": r.rate + 11.0}) for r in before]
+    receipt = provider.publish_rates(prop.id, new_rates)
+    assert receipt.days == len(new_rates)
+
+    after = provider.get_daily_rates(prop.id, *window)
+    assert [r.rate for r in after] == [rate + 11.0 for rate in original]
+    outside_after = provider.get_daily_rates(prop.id, date(2026, 12, 4), date(2026, 12, 5))
+    assert outside_after[0].rate == outside_before[0].rate  # untouched day
+
+    fresh = MockPMS(DATA_DIR)
+    assert [r.rate for r in fresh.get_daily_rates(prop.id, *window)] == original
+
+
 def test_rates_cover_every_day_exactly_once(provider):
     expected_days = [
         WINDOW[0] + timedelta(days=i) for i in range((WINDOW[1] - WINDOW[0]).days)

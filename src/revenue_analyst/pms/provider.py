@@ -14,11 +14,26 @@ from __future__ import annotations
 from datetime import date
 from typing import Protocol, runtime_checkable
 
-from revenue_analyst.domain import DailyRate, Property, Reservation
+from revenue_analyst.domain import DailyRate, Property, RatePublication, Reservation
 
 
 class PropertyNotFoundError(KeyError):
     """Raised when a provider does not know the requested property id."""
+
+
+@runtime_checkable
+class RatePublisher(Protocol):
+    """The WRITE port — deliberately separate from PMSProvider.
+
+    Reading PMS data must never imply permission to change prices: a
+    component gets this capability only when it is wired in explicitly
+    (see Settings.rate_publication), and the only caller is the pricing
+    review's record step, which runs strictly after human approval.
+    """
+
+    def publish_rates(self, property_id: str, rates: list[DailyRate]) -> RatePublication:
+        """Replace the published nightly rates for the given days."""
+        ...
 
 
 @runtime_checkable

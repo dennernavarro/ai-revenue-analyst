@@ -35,7 +35,11 @@ def main() -> None:
     pms = MockPMS(settings.data_dir)
     as_of = pms.as_of(pms.list_properties()[0].id)
     workflow = build_pricing_review(
-        pms, as_of, model=settings.model, checkpointer=sqlite_checkpointer(settings.state_dir)
+        pms,
+        as_of,
+        model=settings.model,
+        checkpointer=sqlite_checkpointer(settings.state_dir),
+        publisher=pms if settings.rate_publication else None,
     )
     config = {"configurable": {"thread_id": f"review-{uuid.uuid4().hex[:8]}"}}
 

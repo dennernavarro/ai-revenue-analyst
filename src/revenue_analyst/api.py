@@ -43,7 +43,7 @@ from revenue_analyst.domain import Property
 from revenue_analyst.llm import message_text
 from revenue_analyst.persistence import sqlite_checkpointer
 from revenue_analyst.pms.mock import MockPMS
-from revenue_analyst.pms.provider import PMSProvider, PropertyNotFoundError
+from revenue_analyst.pms.provider import PMSProvider, PropertyNotFoundError, RatePublisher
 
 
 class PropertyInfo(BaseModel):
@@ -144,8 +144,9 @@ def create_app(
     checkpointer = checkpointer or sqlite_checkpointer(settings.state_dir)
     as_of = _resolve_as_of(pms)
     agent = build_agent(pms, as_of, model=model or settings.model, checkpointer=checkpointer)
+    publisher = pms if settings.rate_publication and isinstance(pms, RatePublisher) else None
     review_workflow = build_pricing_review(
-        pms, as_of, model=model or settings.model, checkpointer=checkpointer
+        pms, as_of, model=model or settings.model, checkpointer=checkpointer, publisher=publisher
     )
 
     app = FastAPI(title="AI Revenue Analyst", version="0.1.0")
@@ -279,10 +280,27 @@ def create_app(
     # the decision endpoint resumes it — possibly days later, from another
     # process.
 
+    # Idempotency guard: one PENDING review per (property, window). Duplicate
+    # POSTs (double-clicks, double-fired effects, retries) get the SAME
+    # review back instead of a second approvable proposal — rate publication
+    # must never be double-applied by transport noise.
+    pending_reviews: dict[tuple, dict] = {}
+
     @app.post("/reviews")
     def start_review(request: ReviewRequest) -> ReviewResponse:
         _property_or_404(request.property_id)
         _validate_range(request.start, request.end)
+
+        key = (request.property_id, request.start, request.end)
+        existing = pending_reviews.get(key)
+        if existing:
+            state = review_workflow.get_state(
+                {"configurable": {"thread_id": f"review-{existing['review_id']}"}}
+            )
+            if state.next:  # still waiting for a decision
+                return ReviewResponse(status="pending_approval", **existing)
+            del pending_reviews[key]
+
         review_id = uuid.uuid4().hex
         config = {"configurable": {"thread_id": f"review-{review_id}"}}
         result = review_workflow.invoke(
@@ -290,10 +308,10 @@ def create_app(
             config,
         )
         if "__interrupt__" in result:
+            proposal = result["__interrupt__"][0].value["proposal"]
+            pending_reviews[key] = {"review_id": review_id, "proposal": proposal}
             return ReviewResponse(
-                review_id=review_id,
-                status="pending_approval",
-                proposal=result["__interrupt__"][0].value["proposal"],
+                review_id=review_id, status="pending_approval", proposal=proposal
             )
         return ReviewResponse(review_id=review_id, status="no_action", outcome=result["outcome"])
 

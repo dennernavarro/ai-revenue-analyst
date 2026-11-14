@@ -40,7 +40,7 @@ from pydantic import BaseModel, Field
 
 from revenue_analyst.analytics import booking_pace, performance_summary
 from revenue_analyst.llm import init_model
-from revenue_analyst.pms.provider import PMSProvider
+from revenue_analyst.pms.provider import PMSProvider, RatePublisher
 
 HEALTHY_OTB_SHARE = 0.40
 """On-the-books share of capacity above which no action is proposed.
@@ -86,6 +86,7 @@ def build_pricing_review(
     as_of: datetime,
     model: str | BaseChatModel = "openrouter:openai/gpt-4o-mini",
     checkpointer: BaseCheckpointSaver | None = None,
+    publisher: RatePublisher | None = None,
 ):
     if checkpointer is None:
         raise ValueError("the pricing review pauses on interrupt(), so it needs a checkpointer")
@@ -165,18 +166,34 @@ def build_pricing_review(
         return {"decision": decision}
 
     def record(state: ReviewState) -> dict:
+        """Publication happens HERE and only here: strictly after the human
+        approval, through the separate write port — and only when a publisher
+        was wired in at build time."""
         proposal, decision = state["proposal"], state["decision"]
         window = f"{state['property_id']} {state['start']}→{state['end']}"
         note = f" Note: {decision['note']}." if decision.get("note") else ""
-        if decision.get("approved"):
-            outcome = (
-                f"APPROVED: {proposal['adjustment_pct']:+.1f}% on published rates for {window}."
-                f"{note} (Recorded only — the mock PMS is read-only; a real RMS would call a"
-                " gated rate-publication port here.)"
+        if not decision.get("approved"):
+            return {"outcome": f"REJECTED: proposal for {window} was declined.{note}"}
+
+        pct = proposal["adjustment_pct"]
+        if publisher is None:
+            return {
+                "outcome": (
+                    f"APPROVED: {pct:+.1f}% on published rates for {window}.{note} "
+                    "(Recorded only — rate publication is not enabled.)"
+                )
+            }
+
+        factor = 1 + pct / 100
+        current = pms.get_daily_rates(state["property_id"], state["start"], state["end"])
+        new_rates = [r.model_copy(update={"rate": float(round(r.rate * factor))}) for r in current]
+        receipt = publisher.publish_rates(state["property_id"], new_rates)
+        return {
+            "outcome": (
+                f"APPROVED & PUBLISHED: {pct:+.1f}% applied to {receipt.days} nightly rates "
+                f"for {window}.{note}"
             )
-        else:
-            outcome = f"REJECTED: proposal for {window} was declined.{note}"
-        return {"outcome": outcome}
+        }
 
     graph = StateGraph(ReviewState)
     graph.add_node("analyze", analyze)

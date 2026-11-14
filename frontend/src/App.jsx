@@ -15,6 +15,7 @@ export default function App() {
   const [performance, setPerformance] = useState(null);
   const [error, setError] = useState(null);
   const [reviewTick, setReviewTick] = useState(0);
+  const [dataTick, setDataTick] = useState(0);
 
   const selected = properties.find((p) => p.property_id === selectedId);
   const asOf = selected ? new Date(selected.as_of) : null;
@@ -57,7 +58,7 @@ export default function App() {
       setRoomTypes(types);
       setPerformance(perf);
     }, setError);
-  }, [selectedId, monthOffset, properties]);
+  }, [selectedId, monthOffset, properties, dataTick]);
 
   if (error) {
     return (
@@ -117,6 +118,7 @@ export default function App() {
             month={view.month}
             monthLabel={view.monthLabel}
             reviewTick={reviewTick}
+            onRatesPublished={() => setDataTick((t) => t + 1)}
           />
         )}
       </div>

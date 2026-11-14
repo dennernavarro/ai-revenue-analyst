@@ -18,6 +18,10 @@ class Settings(BaseSettings):
     frontend_dist: Path = Path("frontend/dist")
     """Built web UI; when the folder exists, the API serves it at /ui."""
 
+    rate_publication: bool = True
+    """When true, an APPROVED pricing review publishes the new rates through
+    the RatePublisher port. Set RA_RATE_PUBLICATION=false for record-only."""
+
     model: str = "openrouter:openai/gpt-4o-mini"
     """Resolved by llm.init_model: "openrouter:<vendor>/<model>",
     "anthropic:<model>", "ollama:<model>"... — the vendor is configuration,

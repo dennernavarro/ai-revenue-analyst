@@ -12,7 +12,14 @@ const GearIcon = () => (
   </svg>
 );
 
-export default function ChatPanel({ propertyId, propertyName, month, monthLabel, reviewTick }) {
+export default function ChatPanel({
+  propertyId,
+  propertyName,
+  month,
+  monthLabel,
+  reviewTick,
+  onRatesPublished,
+}) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
@@ -69,8 +76,11 @@ export default function ChatPanel({ propertyId, propertyName, month, monthLabel,
     }
   }
 
+  const reviewInFlight = useRef(false);
+
   async function startReview() {
-    if (busy) return;
+    if (busy || reviewInFlight.current) return;
+    reviewInFlight.current = true;
     setBusy(true);
     append({ kind: 'user', text: `Run a pricing review for ${monthLabel}.` });
     try {
@@ -83,6 +93,7 @@ export default function ChatPanel({ propertyId, propertyName, month, monthLabel,
     } catch (err) {
       append({ kind: 'assistant', text: `Review failed: ${err.message}` });
     } finally {
+      reviewInFlight.current = false;
       setBusy(false);
     }
   }
@@ -103,6 +114,7 @@ export default function ChatPanel({ propertyId, propertyName, month, monthLabel,
         prev.map((m, i) => (i === index ? { ...m, resolved: true, approved } : m)),
       );
       append({ kind: 'assistant', text: res.outcome });
+      if (approved && res.outcome.includes('PUBLISHED')) onRatesPublished?.();
     } catch (err) {
       append({ kind: 'assistant', text: `Decision failed: ${err.message}` });
     } finally {

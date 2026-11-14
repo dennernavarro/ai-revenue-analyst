@@ -80,6 +80,11 @@ uv run python -m revenue_analyst.review mountain-cabins 2026-12-01 2027-01-01
 
 If the window is pacing below target, the workflow proposes a rate adjustment
 (bounded by a ±25% policy enforced in code) and pauses for your approval.
+Approving publishes the new rates through the `RatePublisher` port — a write
+port deliberately separate from data reading; the mock applies them in
+memory, so a restart returns to the generated rates. Duplicate review
+requests for the same window are deduplicated server-side, and a decision can
+only be applied once. Set `RA_RATE_PUBLICATION=false` for record-only mode.
 
 ### REST API
 
@@ -136,6 +141,7 @@ Everything is set via environment variables / `.env`:
 | `RA_MODEL` | `openrouter:openai/gpt-4o-mini` | Any `openrouter:<vendor>/<model>`, `anthropic:<model>`, `ollama:<model>`, ... |
 | `RA_DATA_DIR` | `data` | Where the mock datasets live |
 | `RA_STATE_DIR` | `.state` | SQLite conversation checkpoints |
+| `RA_RATE_PUBLICATION` | `true` | Approved reviews publish rates via the write port; `false` = record-only |
 | `LANGSMITH_TRACING` + `LANGSMITH_API_KEY` | off | Optional tracing; everything works without it |
 
 ## How it works
