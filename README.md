@@ -42,13 +42,29 @@ Regenerate the mock datasets (deterministic — same seeds, same output):
 PYTHONPATH=src python scripts/generate_data.py
 ```
 
+## Chat with the analyst (Stage 2+)
+
+```bash
+cp .env.example .env   # add your OPENROUTER_API_KEY
+uv run python -m revenue_analyst.cli
+uv run python -m revenue_analyst.cli --once "How was August 2026 at Seaside Villa vs the other properties?"
+```
+
+The model is configuration, not code: `RA_MODEL` defaults to Claude Haiku via
+OpenRouter (`openrouter:<vendor>/<model>` works for any model there, since
+OpenRouter speaks the OpenAI API), and direct-provider strings like
+`anthropic:claude-haiku-4-5` or `ollama:llama3.2` also work — see
+[llm.py](src/revenue_analyst/llm.py). To see full agent traces, uncomment the
+`LANGSMITH_*` variables in `.env` — tracing is optional and everything works
+without it.
+
 ## Learning roadmap
 
 | Stage | Topic | Status |
 |---|---|---|
 | 0 | Foundation: domain, mock PMS, simulator, analytics (no LLM) | ✅ |
 | 1 | LangChain tools over the analytics layer | ✅ |
-| 2 | First agent: `create_agent` + CLI chat + LangSmith tracing | ⬜ |
+| 2 | First agent: `create_agent` + CLI chat + LangSmith tracing | ✅ |
 | 3 | FastAPI: `/chat` plus plain REST endpoints | ⬜ |
 | 4 | LangGraph basics: explicit graph, state, checkpointing | ⬜ |
 | 5 | LangGraph control flow: routing, human-in-the-loop approval | ⬜ |
