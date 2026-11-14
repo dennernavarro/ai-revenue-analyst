@@ -141,10 +141,16 @@ def test_chat_input_injects_selected_property_context():
     plain = ChatRequest(message="How was August here?")
     assert _chat_input(pms, plain) == "How was August here?"
 
-    selected = ChatRequest(message="How was August here?", property_id="seaside-villa")
+    selected = ChatRequest(
+        message="How was August here?",
+        property_id="seaside-villa",
+        view_start="2026-12-01",
+        view_end="2027-01-01",
+    )
     contextualized = _chat_input(pms, selected)
     assert contextualized.startswith("[Dashboard context:")
     assert "Seaside Villa" in contextualized
+    assert "2026-12-01 to 2027-01-01" in contextualized
     assert contextualized.endswith("How was August here?")
 
     unknown = ChatRequest(message="hi", property_id="nope")

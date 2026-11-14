@@ -61,6 +61,9 @@ class ChatRequest(BaseModel):
     property_id: str | None = None
     """The property selected in the dashboard, injected as conversation
     context so "here" / "this property" resolve to it."""
+    view_start: date | None = None
+    view_end: date | None = None
+    """The calendar month on screen (half-open), so "this month" resolves."""
 
 
 class ToolCallInfo(BaseModel):
@@ -94,20 +97,28 @@ class ReviewResponse(BaseModel):
 
 
 def _chat_input(pms: PMSProvider, request: ChatRequest) -> str:
-    """Prefix the user message with the dashboard's selected property, so the
-    agent answers about it directly instead of asking which property or
-    sweeping all of them."""
-    if not request.property_id:
+    """Prefix the user message with what the dashboard is showing (selected
+    property, displayed calendar month), so "here" and "this month" resolve
+    directly instead of triggering clarifications or full sweeps."""
+    parts = []
+    if request.property_id:
+        try:
+            prop = pms.get_property(request.property_id)
+            parts.append(
+                f"the user is currently viewing {prop.name} (property_id: "
+                f"{prop.id}) — 'here' or 'this property' refers to it"
+            )
+        except PropertyNotFoundError:
+            pass
+    if request.view_start and request.view_end:
+        parts.append(
+            f"the calendar on screen shows {request.view_start.isoformat()} to "
+            f"{request.view_end.isoformat()} (half-open) — 'this month' refers "
+            f"to that window"
+        )
+    if not parts:
         return request.message
-    try:
-        prop = pms.get_property(request.property_id)
-    except PropertyNotFoundError:
-        return request.message
-    return (
-        f"[Dashboard context: the user is currently viewing {prop.name} "
-        f"(property_id: {prop.id}). Words like 'here' or 'this property' refer "
-        f"to it.]\n\n{request.message}"
-    )
+    return f"[Dashboard context: {'; '.join(parts)}.]\n\n{request.message}"
 
 
 def _resolve_as_of(pms: PMSProvider) -> datetime:

@@ -15,14 +15,16 @@ const post = (path, body) =>
     body: JSON.stringify(body),
   });
 
-export async function chatStream(message, conversationId, propertyId, onEvent) {
+export async function chatStream(message, conversationId, view, onEvent) {
   const res = await fetch('/chat/stream', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       message,
       conversation_id: conversationId,
-      property_id: propertyId,
+      property_id: view.propertyId,
+      view_start: view.monthStart,
+      view_end: view.monthEnd,
     }),
   });
   if (!res.ok) throw new Error((await res.text()) || res.statusText);
