@@ -39,6 +39,11 @@ def main() -> None:
     parser.add_argument(
         "--thread", default="cli", help="conversation id for persistence (resume anytime)"
     )
+    parser.add_argument(
+        "--deep",
+        action="store_true",
+        help="use the deep agent (planning + subagents) — for big multi-property tasks",
+    )
     args = parser.parse_args()
 
     settings = Settings()
@@ -53,10 +58,13 @@ def main() -> None:
 
     pms = MockPMS(settings.data_dir)
     as_of = pms.as_of(pms.list_properties()[0].id)
-    agent = build_agent(
-        pms, as_of, model=settings.model,
-        checkpointer=sqlite_checkpointer(settings.state_dir),
-    )
+    checkpointer = sqlite_checkpointer(settings.state_dir)
+    if args.deep:
+        from revenue_analyst.agents.v3_deep import build_deep_agent
+
+        agent = build_deep_agent(pms, as_of, model=settings.model, checkpointer=checkpointer)
+    else:
+        agent = build_agent(pms, as_of, model=settings.model, checkpointer=checkpointer)
     config = {"configurable": {"thread_id": args.thread}}
 
     def ask(question: str) -> None:

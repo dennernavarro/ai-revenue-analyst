@@ -1,119 +1,141 @@
 # AI Revenue Analyst
 
-A small, open-source learning project: an AI revenue analyst for short-term
-rentals and boutique hotels, built step by step to learn modern agent
-development with **LangChain**, **LangGraph**, **Deep Agents**, **LangSmith**,
-**FastAPI**, and **Docker**.
+An open-source AI revenue analyst for short-term rentals and small hotels.
+Ask questions about occupancy, ADR, RevPAR, booking pace and rates in plain
+language; run pricing reviews with human approval; or integrate it through a
+REST API. It ships with a realistic mock property-management system (PMS) and
+simulated booking data, and is built so a real PMS can be plugged in later
+through a single interface.
 
-This is a learning project, not a production revenue management system.
+Built with LangChain, LangGraph, Deep Agents, FastAPI and (optionally)
+LangSmith.
 
-## Design principles
+## Requirements
 
-- **Tools calculate, agents reason.** Occupancy, ADR, RevPAR and booking pace
-  are deterministic Python functions ([analytics.py](src/revenue_analyst/analytics.py)).
-  Agents call them as tools and never invent numbers.
-- **Replaceable PMS seam.** Everything depends on the `PMSProvider` protocol
-  ([pms/provider.py](src/revenue_analyst/pms/provider.py)). Today a mock reads
-  JSON files; a real PMS later is one new adapter class that passes the same
-  contract tests.
-- **Simulated bookings, not invented percentages.** The mock data is produced
-  by simulating booking *arrivals* (seasonal demand, lead times, lengths of
-  stay, cancellations, lost demand when sold out), so occupancy, pace and gaps
-  are internally consistent ([datagen.py](src/revenue_analyst/datagen.py)).
-- **Each framework is introduced only when the previous one hurts.**
+- Python 3.11+
+- [uv](https://docs.astral.sh/uv/)
+- An LLM API key — by default an [OpenRouter](https://openrouter.ai/keys) key
 
-## Quickstart
+## Install
 
 ```bash
-# with uv
+git clone https://github.com/dennernavarro/ai-revenue-analyst.git
+cd ai-revenue-analyst
 uv sync
+cp .env.example .env   # then put your OPENROUTER_API_KEY in .env
+```
+
+Check everything works (no API key needed for the tests):
+
+```bash
 uv run pytest
-uv run python scripts/demo_report.py
-
-# or with plain venv/pip
-python3 -m venv .venv && .venv/bin/pip install pydantic pydantic-settings pytest ruff
-.venv/bin/pytest
-PYTHONPATH=src .venv/bin/python scripts/demo_report.py
 ```
 
-Regenerate the mock datasets (deterministic — same seeds, same output):
+## Usage
+
+### Chat with the analyst
 
 ```bash
-PYTHONPATH=src python scripts/generate_data.py
-```
-
-## Chat with the analyst (Stage 2+)
-
-```bash
-cp .env.example .env   # add your OPENROUTER_API_KEY
 uv run python -m revenue_analyst.cli
-uv run python -m revenue_analyst.cli --once "How was August 2026 at Seaside Villa vs the other properties?"
 ```
 
-Conversations persist in a SQLite checkpointer (`.state/`): exit, come back,
-and `--thread <id>` resumes any past conversation across restarts.
+```text
+you> How did Seaside Villa perform in August 2026?
+  ⚙ get_performance({'property_id': 'seaside-villa', ...})
+analyst> Occupancy was 77.4%, ADR $510, RevPAR $394.84 ...
+```
 
-The model is configuration, not code: `RA_MODEL` defaults to Claude Haiku via
-OpenRouter (`openrouter:<vendor>/<model>` works for any model there, since
-OpenRouter speaks the OpenAI API), and direct-provider strings like
-`anthropic:claude-haiku-4-5` or `ollama:llama3.2` also work — see
-[llm.py](src/revenue_analyst/llm.py). To see full agent traces, uncomment the
-`LANGSMITH_*` variables in `.env` — tracing is optional and everything works
-without it.
+Every number comes from deterministic tools — the model never invents
+figures. Conversations persist in `.state/` across restarts; use
+`--thread <id>` for separate conversations, `--once "question"` for a single
+question, and `--deep` for the planning/subagent variant suited to large
+multi-property tasks.
 
-## Pricing review with human approval (Stage 5+)
+### Pricing review with human approval
 
 ```bash
 uv run python -m revenue_analyst.review mountain-cabins 2026-12-01 2027-01-01
 ```
 
-A workflow, not a chat: deterministic analysis and routing, one structured
-LLM slot (the proposal), a policy clamp in code (±25% max), and a LangGraph
-`interrupt` that pauses for your approval. Over HTTP the same flow is
-`POST /reviews` → `POST /reviews/{id}/decision` — the paused graph lives in
-the checkpointer, so the decision can come days later from another process.
+If the window is pacing below target, the workflow proposes a rate adjustment
+(bounded by a ±25% policy enforced in code) and pauses for your approval.
 
-## REST API (Stage 3+)
+### REST API
 
 ```bash
 uv run uvicorn revenue_analyst.api:create_app --factory --reload
 ```
 
-- `GET /properties`
-- `GET /properties/{id}/performance?start=2026-08-01&end=2026-09-01`
-- `GET /properties/{id}/pace?start=2026-12-01&end=2027-01-01`
-- `POST /chat` — `{"message": "...", "conversation_id": "optional"}`
-- `POST /reviews` — start a pricing review; `POST /reviews/{id}/decision` approves/rejects
+Interactive docs at http://127.0.0.1:8000/docs.
 
-Interactive docs at http://127.0.0.1:8000/docs. The GET endpoints never touch
-the LLM; only `/chat` does — that boundary is the point.
+| Endpoint | Description |
+|---|---|
+| `GET /properties` | List properties |
+| `GET /properties/{id}/performance?start=&end=` | Occupancy, ADR, RevPAR, revenue (no LLM) |
+| `GET /properties/{id}/pace?start=&end=` | Booking pace vs 30/60/90 days ago (no LLM) |
+| `POST /chat` | Talk to the agent; pass `conversation_id` to continue |
+| `POST /reviews` | Start a pricing review (may pause for approval) |
+| `POST /reviews/{id}/decision` | Approve or reject a pending review |
 
-## Learning roadmap
+Date ranges are half-open: `end` is excluded.
 
-| Stage | Topic | Status |
+### Mock data
+
+Three simulated properties (as of a simulated "today", 2026-11-01): a
+single-unit beach villa, a 12-room city hotel and four mountain cabins — each
+with its own seasonality, lead times and cancellation behavior. Data is
+generated by simulating booking arrivals (not invented occupancy numbers), so
+pace, gaps and revenue stay internally consistent. Regenerate it any time
+(deterministic seeds):
+
+```bash
+uv run python scripts/generate_data.py
+```
+
+## Configuration
+
+Everything is set via environment variables / `.env`:
+
+| Variable | Default | Description |
 |---|---|---|
-| 0 | Foundation: domain, mock PMS, simulator, analytics (no LLM) | ✅ |
-| 1 | LangChain tools over the analytics layer | ✅ |
-| 2 | First agent: `create_agent` + CLI chat + LangSmith tracing | ✅ |
-| 3 | FastAPI: `/chat` plus plain REST endpoints | ✅ |
-| 4 | LangGraph basics: explicit graph, state, checkpointing | ✅ |
-| 5 | LangGraph control flow: routing, human-in-the-loop approval | ✅ |
-| 6 | Deep Agents: planning, subagents, when they earn their cost | ⬜ |
-| 7 | Docker: containerized deployment | ⬜ |
-| 8 | LangSmith evaluation: datasets, evaluators, regression runs | ⬜ |
+| `OPENROUTER_API_KEY` | — | Key for the default model route |
+| `RA_MODEL` | `openrouter:openai/gpt-4o-mini` | Any `openrouter:<vendor>/<model>`, `anthropic:<model>`, `ollama:<model>`, ... |
+| `RA_DATA_DIR` | `data` | Where the mock datasets live |
+| `RA_STATE_DIR` | `.state` | SQLite conversation checkpoints |
+| `LANGSMITH_TRACING` + `LANGSMITH_API_KEY` | off | Optional tracing; everything works without it |
 
-Stage 4 built the agent loop by hand in LangGraph to see the machinery, then
-we deleted it: `create_agent` + a checkpointer does the same job in a tenth
-of the code. The write-up lives in [docs/notes/stage-4.md](docs/notes/stage-4.md)
-and the implementation in the git history — learning kept, code debt not.
+## How it works
 
-## Mock properties
+```text
+cli.py / review.py / api.py          ← entry points
+        │
+agents/  (chat agent · deep agent · pricing-review workflow)
+        │
+tools.py (read-only @tool) → analytics.py (pure calculations)
+        │
+pms/provider.py (Protocol) → pms/mock.py → data/*.json
+```
 
-Three seeded properties with different demand patterns (as of the simulated
-"today", 2026-11-01):
+Design rules the codebase follows:
 
-- **Seaside Villa** — single-unit vacation rental, summer-peaked, long stays,
-  long lead times.
-- **Urban Boutique** — 12-room city hotel, weekday business demand, short
-  stays, short lead times.
-- **Mountain Cabins** — 4 cabins, winter-peaked weekend leisure demand.
+- Tools calculate, agents reason — KPIs come from tested pure functions.
+- The PMS behind `PMSProvider` is replaceable: a real integration is one new
+  adapter that passes the same contract tests (`tests/test_pms_contract.py`).
+- Hard business constraints (rate bounds, approval gates) are enforced in
+  code, outside the LLM.
+- GET endpoints never touch the LLM; only `/chat` and `/reviews` do.
+
+## Development
+
+```bash
+uv run pytest        # full suite, runs offline (agents tested with fake models)
+uv run ruff check .  # lint
+```
+
+This project was built incrementally as a learning journey through modern
+agent tooling — the stage-by-stage write-ups, including what hurt and what
+each framework actually buys you, live in [docs/notes/](docs/notes/).
+
+## License
+
+[Apache-2.0](LICENSE)
