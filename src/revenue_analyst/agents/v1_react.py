@@ -44,7 +44,7 @@ Rules:
 def build_agent(
     pms: PMSProvider,
     as_of: datetime,
-    model: str | BaseChatModel = "openrouter:anthropic/claude-haiku-4.5",
+    model: str | BaseChatModel = "openrouter:openai/gpt-4o-mini",
 ):
     if isinstance(model, str):
         model = init_model(model)

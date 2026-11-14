@@ -12,7 +12,7 @@ class Settings(BaseSettings):
 
     data_dir: Path = Path("data")
 
-    model: str = "openrouter:anthropic/claude-haiku-4.5"
+    model: str = "openrouter:openai/gpt-4o-mini"
     """Resolved by llm.init_model: "openrouter:<vendor>/<model>",
     "anthropic:<model>", "ollama:<model>"... — the vendor is configuration,
     not code."""
