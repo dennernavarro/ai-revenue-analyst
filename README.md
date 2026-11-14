@@ -79,6 +79,17 @@ Interactive docs at http://127.0.0.1:8000/docs.
 
 Date ranges are half-open: `end` is excluded.
 
+### Docker
+
+```bash
+docker compose up --build
+```
+
+Builds a multi-stage image (uv-locked dependencies, slim runtime, non-root
+user) and serves the API on port 8000. The `.env` file supplies the LLM key,
+and conversation checkpoints live in a named volume, so chat memory survives
+container restarts.
+
 ### Mock data
 
 Three simulated properties (as of a simulated "today", 2026-11-01): a
