@@ -57,7 +57,8 @@ def build_tools(pms: PMSProvider, as_of: datetime) -> list[BaseTool]:
         """Realized performance of one property over a past date range.
 
         Dates are ISO format (YYYY-MM-DD) and the range is half-open:
-        end_date is NOT included, so a full August is 2026-08-01 to 2026-09-01.
+        end_date is NOT included, so a full month ends on the 1st of the NEXT
+        month (full August = 2026-08-01 to 2026-09-01, never ...-08-31).
 
         Returns nights available/sold, occupancy (0..1), total revenue, ADR
         (average daily rate = revenue / nights sold) and RevPAR (revenue per
@@ -79,12 +80,15 @@ def build_tools(pms: PMSProvider, as_of: datetime) -> list[BaseTool]:
     def get_booking_pace(property_id: str, start_date: date, end_date: date) -> dict:
         """Booking pace for a (usually future) stay window: how many nights are
         already sold ("on the books") today and how many were sold 30/60/90
-        days ago.
+        days ago. Also THE source for capacity questions — the result includes
+        capacity_nights (units × nights); never compute capacity yourself.
 
         Dates are ISO format (YYYY-MM-DD); the range is half-open (end_date
-        excluded). Comparing the values shows pickup — how fast the window is
-        filling. Nights on the books exclude reservations that were cancelled
-        by each as-of moment.
+        excluded), so a full month ends on the 1st of the NEXT month:
+        December 2026 is 2026-12-01 to 2027-01-01, never ...-12-31.
+        Comparing the values shows pickup — how fast the window is filling.
+        Nights on the books exclude reservations cancelled by each as-of
+        moment.
         """
         try:
             prop = pms.get_property(property_id)

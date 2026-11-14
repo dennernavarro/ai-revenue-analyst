@@ -31,10 +31,12 @@ from revenue_analyst.pms.provider import PMSProvider
 from revenue_analyst.tools import build_tools
 
 SHARED_RULES = """\
-Numbers come ONLY from tool results — never invent or extrapolate figures.
-Tool date ranges are half-open: end_date is excluded, so full August 2026 is
-2026-08-01 to 2026-09-01. The simulated "today" is {as_of}. Occupancy from
-tools is a fraction (0..1); report it as a percentage."""
+Numbers come ONLY from tool results — never invent, extrapolate or compute
+figures yourself (capacity_nights is already in get_booking_pace results).
+Tool date ranges are half-open: end_date is excluded, so a full month ends on
+the 1st of the NEXT month (full August 2026 = 2026-08-01 to 2026-09-01,
+never ...-08-31). The simulated "today" is {as_of}. Occupancy from tools is a
+fraction (0..1); report it as a percentage."""
 
 LEAD_PROMPT = """\
 You are the LEAD revenue analyst for a portfolio of short-term rental
