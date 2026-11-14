@@ -14,13 +14,14 @@ fake model. Run it with:
 
 from __future__ import annotations
 
+import json
 import uuid
 from datetime import date, datetime
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.types import Command
 from pydantic import BaseModel
@@ -151,6 +152,57 @@ def create_app(
         _validate_range(start, end)
         reservations = pms.get_reservations(property_id, start, end)
         return booking_pace(prop, reservations, _resolve_as_of(pms), start, end)
+
+    @app.post("/chat/stream")
+    def chat_stream(request: ChatRequest):
+        """Server-sent events: `tool` events as the agent picks tools, `token`
+        events as the final answer is generated, then `done`. The non-streaming
+        POST /chat stays for simple API clients."""
+        from fastapi.responses import StreamingResponse
+
+        conversation_id = request.conversation_id or uuid.uuid4().hex
+        config = {"configurable": {"thread_id": conversation_id}}
+
+        def sse(payload: dict) -> str:
+            return f"data: {json.dumps(payload)}\n\n"
+
+        def events():
+            yield sse({"type": "start", "conversation_id": conversation_id})
+            stream = agent.stream(
+                {"messages": [HumanMessage(request.message)]},
+                config,
+                stream_mode=["updates", "messages"],
+            )
+            for mode, payload in stream:
+                if mode == "messages":
+                    chunk, _meta = payload
+                    # "messages" mode also yields ToolMessages; only LLM
+                    # token chunks belong in the reply stream.
+                    if not isinstance(chunk, AIMessageChunk):
+                        continue
+                    content = chunk.content
+                    text = (
+                        content
+                        if isinstance(content, str)
+                        else "".join(
+                            block.get("text", "")
+                            for block in content
+                            if isinstance(block, dict)
+                        )
+                    )
+                    if text:
+                        yield sse({"type": "token", "text": text})
+                else:
+                    for node_output in payload.values():
+                        for message in (node_output or {}).get("messages", []):
+                            if isinstance(message, AIMessage):
+                                for call in message.tool_calls:
+                                    yield sse(
+                                        {"type": "tool", "name": call["name"], "args": call["args"]}
+                                    )
+            yield sse({"type": "done"})
+
+        return StreamingResponse(events(), media_type="text/event-stream")
 
     @app.get("/properties/{property_id}/calendar")
     def property_calendar(property_id: str, start: date, end: date) -> list[CalendarDay]:

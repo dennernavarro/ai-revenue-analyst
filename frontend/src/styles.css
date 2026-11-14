@@ -5,12 +5,20 @@
   --ink-2: #566069;
   --ink-3: #6b7378;
   --line: #e4e7e5;
+  --line-soft: #eef0ee;
+  --border-btn: #d8dcda;
   --bg: #f4f5f4;
   --warn: #9a3412;
 }
 
 * {
   box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
 }
 
 body {
@@ -32,6 +40,11 @@ button {
   cursor: pointer;
 }
 
+button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
 .sr-only {
   position: absolute;
   width: 1px;
@@ -40,17 +53,28 @@ button {
   clip: rect(0 0 0 0);
 }
 
+/* --- app frame: viewport-locked, panels scroll internally ----------------- */
+
 .app {
-  min-height: 100vh;
+  height: 100vh;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
+
+.layout {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  align-items: stretch;
+}
+
+/* --- topbar --------------------------------------------------------------- */
 
 .topbar {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  gap: 14px;
+  gap: 16px;
   padding: 12px 24px;
   background: #fff;
   border-bottom: 1px solid var(--line);
@@ -63,6 +87,7 @@ button {
   font-family: 'Space Grotesk', sans-serif;
   font-weight: 600;
   font-size: 16px;
+  white-space: nowrap;
 }
 
 .brand-mark {
@@ -74,46 +99,100 @@ button {
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+.prop-pill {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border: 1px solid var(--border-btn);
+  border-radius: 10px;
+  background: #fff;
   font-size: 13px;
+  font-weight: 500;
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+.prop-pill svg {
+  color: var(--ink-2);
 }
 
 .pill {
   font-size: 12px;
-  font-weight: 500;
   background: #f0f2f0;
   border-radius: 999px;
   padding: 6px 12px;
+  white-space: nowrap;
 }
 
 .pill.muted {
   color: var(--ink-2);
-  font-weight: 400;
+}
+
+.btn-review {
+  padding: 8px 14px;
+  border: 1px solid var(--accent);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--ink);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .spacer {
   flex: 1 1 0;
 }
 
-.layout {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: stretch;
-  flex: 1 1 auto;
-}
+/* --- sidebar -------------------------------------------------------------- */
 
 .sidebar {
-  flex: 1 1 190px;
-  max-width: 230px;
+  flex: 0 0 232px;
   background: #fff;
   border-right: 1px solid var(--line);
   padding: 16px 12px;
   display: flex;
   flex-direction: column;
   gap: 4px;
+  overflow-y: auto;
+}
+
+.nav-link {
+  display: block;
+  padding: 9px 12px;
+  border-radius: 9px;
+  color: #444b51;
+  font-size: 13px;
+  text-decoration: none;
+}
+
+.nav-link:hover {
+  background: #f0f2f0;
+}
+
+.nav-link.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
 }
 
 .sidebar-label {
-  margin: 4px 12px 8px;
+  margin: 16px 12px 6px;
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.08em;
@@ -125,7 +204,7 @@ button {
   justify-content: space-between;
   align-items: center;
   gap: 8px;
-  padding: 9px 12px;
+  padding: 8px 12px;
   border: none;
   border-radius: 9px;
   background: transparent;
@@ -139,8 +218,8 @@ button {
 }
 
 .prop-row.active {
-  background: var(--accent-soft);
-  color: var(--accent);
+  background: #f0f2f0;
+  color: var(--ink);
   font-weight: 600;
 }
 
@@ -150,26 +229,33 @@ button {
   font-weight: 400;
 }
 
+/* --- main content --------------------------------------------------------- */
+
 .content {
-  flex: 999 1 540px;
+  flex: 1 1 auto;
   min-width: 0;
   padding: 20px 24px;
   display: flex;
   flex-direction: column;
   gap: 18px;
+  overflow-y: auto;
 }
 
 .card {
   background: #fff;
   border: 1px solid var(--line);
   border-radius: 14px;
-  padding: 16px 18px;
+  padding: 18px 20px;
 }
 
 .kpi-row {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
   gap: 14px;
+}
+
+.card.kpi {
+  padding: 14px 16px;
 }
 
 .kpi-label {
@@ -199,7 +285,7 @@ button {
   flex-wrap: wrap;
   align-items: center;
   gap: 12px;
-  margin-bottom: 12px;
+  margin-bottom: 14px;
 }
 
 .card-head h2 {
@@ -212,15 +298,43 @@ button {
   color: var(--ink-2);
 }
 
+.legend {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--ink-2);
+}
+
+.swatch {
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+}
+
+.swatch.s1 {
+  background: rgba(14, 107, 83, 0.11);
+  border: 1px solid var(--line);
+}
+
+.swatch.s2 {
+  background: rgba(14, 107, 83, 0.27);
+}
+
+.swatch.s3 {
+  background: rgba(14, 107, 83, 0.43);
+}
+
 .icon-btn {
   width: 28px;
   height: 28px;
-  border: 1px solid #d8dcda;
+  border: 1px solid var(--border-btn);
   border-radius: 8px;
   background: #fff;
   color: #444b51;
-  font-size: 16px;
-  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .cal-grid {
@@ -238,10 +352,15 @@ button {
 }
 
 .cal-cell {
-  min-height: 56px;
-  border: 1px solid #eef0ee;
+  min-height: 58px;
+  border: 1px solid var(--line-soft);
   border-radius: 9px;
-  padding: 6px 8px;
+  padding: 7px 8px;
+  background: #fff;
+}
+
+.cal-cell.filled {
+  border-color: transparent;
 }
 
 .cal-top {
@@ -263,16 +382,16 @@ button {
 .cal-sold {
   font-size: 10px;
   color: #444b51;
-  margin-top: 12px;
+  margin-top: 14px;
 }
 
 .rt-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.4fr) 60px 80px minmax(0, 1fr) 44px;
+  grid-template-columns: minmax(0, 1.4fr) 70px 90px minmax(0, 1fr) 48px;
   gap: 10px;
   align-items: center;
-  padding: 10px 0;
-  border-bottom: 1px solid #eef0ee;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line-soft);
   font-size: 13px;
 }
 
@@ -284,7 +403,7 @@ button {
   font-size: 11px;
   font-weight: 600;
   color: var(--ink-3);
-  padding: 4px 0;
+  padding: 6px 0;
 }
 
 .rt-name {
@@ -298,7 +417,7 @@ button {
 .rt-bar {
   height: 8px;
   border-radius: 999px;
-  background: #eef0ee;
+  background: var(--line-soft);
   overflow: hidden;
 }
 
@@ -314,27 +433,39 @@ button {
   text-align: right;
 }
 
+/* --- chat ----------------------------------------------------------------- */
+
 .chat {
-  flex: 1 1 330px;
-  max-width: 430px;
+  flex: 0 0 380px;
   background: #fff;
   border-left: 1px solid var(--line);
   display: flex;
   flex-direction: column;
-  min-height: 420px;
+  min-height: 0;
 }
 
 .chat-head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 10px;
   padding: 14px 16px;
   border-bottom: 1px solid var(--line);
 }
 
+.chat-mark {
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .chat-title {
   font-weight: 600;
+  font-size: 14px;
 }
 
 .chat-sub {
@@ -343,7 +474,8 @@ button {
 }
 
 .chat-scroll {
-  flex: 1 1 auto;
+  flex: 1 1 0;
+  min-height: 0;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
@@ -370,21 +502,40 @@ button {
 
 .bubble.user {
   align-self: flex-end;
+  max-width: 85%;
   background: var(--accent-soft);
   color: #153b30;
   border-radius: 14px 14px 4px 14px;
+  line-height: 1.5;
 }
 
 .bubble.assistant {
   align-self: flex-start;
+  max-width: 92%;
   background: #f6f7f6;
-  border: 1px solid #eef0ee;
+  border: 1px solid var(--line-soft);
   border-radius: 14px 14px 14px 4px;
 }
 
 .bubble.thinking {
   color: var(--ink-3);
   font-style: italic;
+}
+
+.caret {
+  display: inline-block;
+  width: 7px;
+  height: 13px;
+  margin-left: 2px;
+  background: var(--accent);
+  vertical-align: text-bottom;
+  animation: blink 1s steps(1) infinite;
+}
+
+@keyframes blink {
+  50% {
+    opacity: 0;
+  }
 }
 
 .tool-chips {
@@ -394,22 +545,34 @@ button {
 }
 
 .tool-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font-family: ui-monospace, monospace;
   font-size: 11px;
   color: var(--ink-2);
   background: #f0f2f0;
   border-radius: 999px;
   padding: 4px 10px;
+  overflow-wrap: anywhere;
 }
 
 .review-card {
+  align-self: flex-start;
+  width: 92%;
   border: 1px solid var(--line);
   border-radius: 14px;
   padding: 14px;
 }
 
+.review-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
 .review-tag {
-  display: inline-block;
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.06em;
@@ -417,19 +580,23 @@ button {
   background: #faeeda;
   border-radius: 999px;
   padding: 3px 10px;
-  margin-bottom: 8px;
+}
+
+.review-when {
+  font-size: 11px;
+  color: var(--ink-3);
 }
 
 .review-title {
   font-family: 'Space Grotesk', sans-serif;
-  font-size: 19px;
+  font-size: 20px;
   font-weight: 600;
 }
 
 .review-body {
   font-size: 12px;
   color: var(--ink-2);
-  margin: 6px 0 0;
+  margin: 4px 0 0;
   line-height: 1.5;
 }
 
@@ -448,21 +615,23 @@ button {
   color: #fff;
   font-size: 13px;
   font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .btn-outline {
   padding: 8px 12px;
-  border: 1px solid #d8dcda;
+  border: 1px solid var(--border-btn);
   border-radius: 9px;
   background: #fff;
   color: #444b51;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 500;
 }
 
-button:disabled {
-  opacity: 0.55;
-  cursor: default;
+.btn-outline.grow {
+  flex: 1 1 0;
 }
 
 .chat-suggestions {
@@ -474,7 +643,7 @@ button:disabled {
 
 .chip {
   padding: 6px 12px;
-  border: 1px solid #d8dcda;
+  border: 1px solid var(--border-btn);
   border-radius: 999px;
   background: #fff;
   font-size: 12px;
@@ -491,7 +660,7 @@ button:disabled {
 .chat-input input {
   flex: 1 1 0;
   padding: 10px 14px;
-  border: 1px solid #d8dcda;
+  border: 1px solid var(--border-btn);
   border-radius: 10px;
   font-family: inherit;
   font-size: 13px;
@@ -500,7 +669,10 @@ button:disabled {
 
 .chat-input .send {
   flex: 0 0 auto;
-  width: 42px;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  padding: 0;
 }
 
 .error-screen {
@@ -508,4 +680,41 @@ button:disabled {
   margin: 80px auto;
   text-align: center;
   color: var(--ink-2);
+}
+
+/* --- narrow screens: stack panels, give chat a fixed height --------------- */
+
+@media (max-width: 1020px) {
+  .app {
+    height: auto;
+    overflow: visible;
+  }
+
+  .layout {
+    flex-wrap: wrap;
+  }
+
+  .sidebar {
+    flex: 1 1 100%;
+    max-width: none;
+    border-right: none;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .content {
+    flex: 1 1 100%;
+    overflow: visible;
+  }
+
+  .chat {
+    flex: 1 1 100%;
+    height: 560px;
+    border-left: none;
+    border-top: 1px solid var(--line);
+  }
+
+  .topbar .pill.muted,
+  .avatar {
+    display: none;
+  }
 }

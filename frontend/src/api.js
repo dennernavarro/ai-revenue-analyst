@@ -15,6 +15,29 @@ const post = (path, body) =>
     body: JSON.stringify(body),
   });
 
+export async function chatStream(message, conversationId, onEvent) {
+  const res = await fetch('/chat/stream', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message, conversation_id: conversationId }),
+  });
+  if (!res.ok) throw new Error((await res.text()) || res.statusText);
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    let split;
+    while ((split = buffer.indexOf('\n\n')) >= 0) {
+      const line = buffer.slice(0, split).trim();
+      buffer = buffer.slice(split + 2);
+      if (line.startsWith('data:')) onEvent(JSON.parse(line.slice(5)));
+    }
+  }
+}
+
 export const api = {
   properties: () => get('/properties'),
   performance: (id, start, end) =>

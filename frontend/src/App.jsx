@@ -14,6 +14,7 @@ export default function App() {
   const [roomTypes, setRoomTypes] = useState([]);
   const [performance, setPerformance] = useState(null);
   const [error, setError] = useState(null);
+  const [reviewTick, setReviewTick] = useState(0);
 
   const selected = properties.find((p) => p.property_id === selectedId);
   const asOf = selected ? new Date(selected.as_of) : null;
@@ -72,17 +73,28 @@ export default function App() {
       <header className="topbar">
         <div className="brand">
           <span className="brand-mark" aria-hidden="true">
-            ✦
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1" />
+            </svg>
           </span>
           AI Revenue Analyst
         </div>
         {selected && (
-          <span className="pill">
+          <span className="prop-pill">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M4 21V7l6-4 6 4v14M10 9h.01M10 13h.01M10 17h.01M4 21h16" />
+            </svg>
             {selected.name} · {selected.city}
           </span>
         )}
         <div className="spacer" />
         {asOf && <span className="pill muted">Data as of {asOf.toISOString().slice(0, 10)}</span>}
+        <button className="btn-review" onClick={() => setReviewTick((t) => t + 1)}>
+          Run pricing review
+        </button>
+        <div className="avatar" aria-hidden="true">
+          DN
+        </div>
       </header>
 
       <div className="layout">
@@ -115,6 +127,7 @@ export default function App() {
             propertyName={selected.name}
             month={view.month}
             monthLabel={view.monthLabel}
+            reviewTick={reviewTick}
           />
         )}
       </div>

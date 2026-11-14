@@ -1,5 +1,9 @@
+import json
+
 import pytest
 from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
+from langchain_core.messages import AIMessageChunk
+from langchain_core.outputs import ChatGenerationChunk
 from langchain_core.runnables import RunnableLambda
 from pydantic import Field
 
@@ -22,6 +26,25 @@ class ScriptedToolModel(GenericFakeChatModel):
     def with_structured_output(self, schema, **kwargs):
         outputs = iter(self.structured_outputs)
         return RunnableLambda(lambda _input: next(outputs))
+
+    def _stream(self, messages, stop=None, run_manager=None, **kwargs):
+        """GenericFakeChatModel cannot stream tool-call-only messages; emit
+        each scripted message as a single chunk instead."""
+        message = next(self.messages)
+        chunk = AIMessageChunk(
+            content=message.content,
+            tool_call_chunks=[
+                {
+                    "name": call["name"],
+                    "args": json.dumps(call["args"]),
+                    "id": call["id"],
+                    "index": i,
+                    "type": "tool_call_chunk",
+                }
+                for i, call in enumerate(getattr(message, "tool_calls", []) or [])
+            ],
+        )
+        yield ChatGenerationChunk(message=chunk)
 
 
 @pytest.fixture

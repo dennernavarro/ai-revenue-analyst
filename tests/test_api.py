@@ -134,6 +134,21 @@ def test_review_approval_flow(scripted_model):
     assert missing.status_code == 404
 
 
+def test_chat_stream_emits_tool_token_and_done_events(client):
+    response = client.post("/chat/stream", json={"message": "How many properties?"})
+    assert response.status_code == 200
+    events = [
+        __import__("json").loads(line[len("data: ") :])
+        for line in response.text.splitlines()
+        if line.startswith("data: ")
+    ]
+    kinds = [e["type"] for e in events]
+    assert kinds[0] == "start" and kinds[-1] == "done"
+    assert any(e["type"] == "tool" and e["name"] == "list_properties" for e in events)
+    reply = "".join(e["text"] for e in events if e["type"] == "token")
+    assert "3 properties" in reply
+
+
 def test_chat_keeps_conversation_memory(client):
     first = client.post("/chat", json={"message": "How many properties?"}).json()
     assert first["reply"] == "We manage 3 properties."
