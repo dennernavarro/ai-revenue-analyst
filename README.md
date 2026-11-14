@@ -1,5 +1,7 @@
 # AI Revenue Analyst
 
+[![CI](https://github.com/dennernavarro/ai-revenue-analyst/actions/workflows/ci.yml/badge.svg)](https://github.com/dennernavarro/ai-revenue-analyst/actions/workflows/ci.yml)
+
 An open-source AI revenue analyst for short-term rentals and small hotels.
 Ask questions about occupancy, ADR, RevPAR, booking pace and rates in plain
 language; run pricing reviews with human approval; or integrate it through a
