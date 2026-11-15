@@ -5,6 +5,14 @@ import { api, chatStream } from '../api.js';
 
 const SUGGESTIONS = ['Compare with last month', 'Show weekend rates', 'Why is pace low?'];
 
+// Deep mode shines on portfolio-sized, multi-step missions — the chips
+// should invite exactly those, not single-tool questions.
+const DEEP_SUGGESTIONS = [
+  'Review all properties for next quarter',
+  'Compare every property with last year',
+  'Which property needs pricing action first?',
+];
+
 const GearIcon = () => (
   <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
     <circle cx="12" cy="12" r="3" />
@@ -256,8 +264,9 @@ export default function ChatPanel({
       <div className="chat-scroll" ref={scrollRef}>
         {messages.length === 0 && (
           <div className="chat-empty">
-            Ask about {propertyName}&apos;s performance, booking pace or rates — or run a pricing
-            review for {monthLabel}.
+            {deepMode
+              ? 'Deep mode: give the lead analyst a portfolio-sized mission. It will plan the work, delegate to specialist subagents and synthesize their reports.'
+              : `Ask about ${propertyName}'s performance, booking pace or rates — or run a pricing review for ${monthLabel}.`}
           </div>
         )}
         {messages.map((m, i) => {
@@ -329,7 +338,7 @@ export default function ChatPanel({
       </div>
 
       <div className="chat-suggestions">
-        {SUGGESTIONS.map((s) => (
+        {(deepMode ? DEEP_SUGGESTIONS : SUGGESTIONS).map((s) => (
           <button key={s} className="chip" onClick={() => send(s)} disabled={busy}>
             {s}
           </button>
