@@ -27,3 +27,10 @@ locally (`python -m revenue_analyst.evals`) and as a LangSmith experiment
 - The LangSmith path reuses the same scoring function as a `(inputs,
   outputs, reference_outputs)` evaluator — write scorers as pure functions
   and every harness can host them.
+- *Postscript (once the key arrived):* the dataset uploaded on first
+  `--langsmith` run, and two tracked experiments now sit side by side on it —
+  gpt-4o-mini and claude-haiku-4.5, both scoring behavior=1.0 after the
+  prompt hardening. The compare view shows per-question traces (every tool
+  call and token count), which is the part a local pass/fail table cannot
+  give you: when a run fails, the trace shows *where* the reasoning went
+  sideways, not just that it did.
