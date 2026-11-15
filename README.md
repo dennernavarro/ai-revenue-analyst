@@ -69,7 +69,9 @@ analyst> Occupancy was 77.4%, ADR $510, RevPAR $394.84 ...
 Every number comes from deterministic tools — the model never invents
 figures. Conversations persist in `.state/` across restarts; use
 `--thread <id>` for separate conversations, `--once "question"` for a single
-question, and `--deep` for the planning/subagent variant suited to large
+question, and `--deep` for the deep-agent variant: its lead holds no data
+tools, so it must plan (`write_todos`) and delegate (`task()`) to specialist
+subagents — watch the ⚙ trace to see the delegation happen on big
 multi-property tasks.
 
 ### Pricing review with human approval
