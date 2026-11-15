@@ -17,8 +17,23 @@ DATA_DIR = Path(__file__).resolve().parents[1] / "data"
 WINDOW = (date(2026, 6, 1), date(2026, 7, 1))
 
 
-@pytest.fixture(params=["mock"])
+@pytest.fixture(
+    params=[
+        "mock",
+        pytest.param(
+            "template",
+            marks=pytest.mark.skip(
+                reason="integration slot: fill in pms/template.py (or your copy of it) "
+                "and remove this skip to validate the real adapter"
+            ),
+        ),
+    ]
+)
 def provider(request) -> PMSProvider:
+    if request.param == "template":
+        from revenue_analyst.pms.template import TemplatePMSAdapter
+
+        return TemplatePMSAdapter()
     return MockPMS(DATA_DIR)
 
 

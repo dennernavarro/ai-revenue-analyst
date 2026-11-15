@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+from datetime import datetime
 
 from dotenv import load_dotenv
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
@@ -21,6 +22,7 @@ from revenue_analyst.agents.v1_react import build_agent
 from revenue_analyst.config import Settings
 from revenue_analyst.llm import message_text
 from revenue_analyst.persistence import sqlite_checkpointer
+from revenue_analyst.pms.factory import build_provider
 from revenue_analyst.pms.mock import MockPMS
 
 
@@ -56,8 +58,12 @@ def main() -> None:
     if key_var and not os.getenv(key_var):
         sys.exit(f"{key_var} is not set — copy .env.example to .env and add your key.")
 
-    pms = MockPMS(settings.data_dir)
-    as_of = pms.as_of(pms.list_properties()[0].id)
+    pms = build_provider(settings)
+    as_of = (
+        pms.as_of(pms.list_properties()[0].id)
+        if isinstance(pms, MockPMS)
+        else datetime.now()
+    )
     checkpointer = sqlite_checkpointer(settings.state_dir)
     if args.deep:
         from revenue_analyst.agents.v3_deep import build_deep_agent

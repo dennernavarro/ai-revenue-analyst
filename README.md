@@ -140,6 +140,7 @@ Everything is set via environment variables / `.env`:
 | Variable | Default | Description |
 |---|---|---|
 | `OPENROUTER_API_KEY` | — | Key for the default model route |
+| `RA_PMS_PROVIDER` | `mock` | Which PMS adapter backs the app (see `pms/factory.py`) |
 | `RA_MODEL` | `openrouter:openai/gpt-4o-mini` | Any `openrouter:<vendor>/<model>`, `anthropic:<model>`, `ollama:<model>`, ... |
 | `RA_DATA_DIR` | `data` | Where the mock datasets live |
 | `RA_STATE_DIR` | `.state` | SQLite conversation checkpoints |
@@ -163,8 +164,10 @@ pms/provider.py (Protocol) → pms/mock.py → data/*.json
 Design rules the codebase follows:
 
 - Tools calculate, agents reason — KPIs come from tested pure functions.
-- The PMS behind `PMSProvider` is replaceable: a real integration is one new
-  adapter that passes the same contract tests (`tests/test_pms_contract.py`).
+- The PMS behind `PMSProvider` is replaceable: copy
+  [pms/template.py](src/revenue_analyst/pms/template.py), fill in its TODOs,
+  register it in `pms/factory.py`, and make it pass the same contract tests
+  (`tests/test_pms_contract.py`) — then select it with `RA_PMS_PROVIDER`.
 - Hard business constraints (rate bounds, approval gates) are enforced in
   code, outside the LLM.
 - GET endpoints never touch the LLM; only `/chat` and `/reviews` do.

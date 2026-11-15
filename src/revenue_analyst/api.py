@@ -143,7 +143,10 @@ def create_app(
 ) -> FastAPI:
     load_dotenv()
     settings = Settings()
-    pms = pms or MockPMS(settings.data_dir)
+    if pms is None:
+        from revenue_analyst.pms.factory import build_provider
+
+        pms = build_provider(settings)
 
     # Stage 4: conversation memory lives in a LangGraph checkpointer (SQLite
     # by default), keyed by thread_id — it survives server restarts, unlike

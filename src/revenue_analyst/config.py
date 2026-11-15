@@ -10,6 +10,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="RA_", env_file=".env", extra="ignore")
 
+    pms_provider: str = "mock"
+    """Which PMS adapter backs this process — a key in pms/factory.PROVIDERS."""
+
     data_dir: Path = Path("data")
 
     state_dir: Path = Path(".state")

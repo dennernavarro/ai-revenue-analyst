@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import argparse
 import uuid
-from datetime import date
+from datetime import date, datetime
 
 from dotenv import load_dotenv
 from langgraph.types import Command
@@ -20,6 +20,7 @@ from langgraph.types import Command
 from revenue_analyst.agents.pricing_review import build_pricing_review
 from revenue_analyst.config import Settings
 from revenue_analyst.persistence import sqlite_checkpointer
+from revenue_analyst.pms.factory import build_provider
 from revenue_analyst.pms.mock import MockPMS
 
 
@@ -32,8 +33,12 @@ def main() -> None:
     args = parser.parse_args()
 
     settings = Settings()
-    pms = MockPMS(settings.data_dir)
-    as_of = pms.as_of(pms.list_properties()[0].id)
+    pms = build_provider(settings)
+    as_of = (
+        pms.as_of(pms.list_properties()[0].id)
+        if isinstance(pms, MockPMS)
+        else datetime.now()
+    )
     workflow = build_pricing_review(
         pms,
         as_of,
