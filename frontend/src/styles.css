@@ -692,6 +692,13 @@ button:disabled {
   color: #444b51;
 }
 
+.deep-toggle.on {
+  background: #faeeda;
+  border-color: #ba7517;
+  color: #854f0b;
+  font-weight: 600;
+}
+
 .chat-input {
   display: flex;
   gap: 8px;

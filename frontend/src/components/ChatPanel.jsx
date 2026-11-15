@@ -24,6 +24,7 @@ export default function ChatPanel({
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
+  const [deepMode, setDeepMode] = useState(false);
   const conversationId = useRef(null);
   const scrollRef = useRef(null);
   const append = (msg) => setMessages((prev) => [...prev, msg]);
@@ -40,7 +41,7 @@ export default function ChatPanel({
     setBusy(true);
     append({ kind: 'user', text: question });
     try {
-      const view = { propertyId, monthStart: month.start, monthEnd: month.end };
+      const view = { propertyId, monthStart: month.start, monthEnd: month.end, deep: deepMode };
       await chatStream(question, conversationId.current, view, (event) => {
         if (event.type === 'start') {
           conversationId.current = event.conversation_id;
@@ -137,8 +138,24 @@ export default function ChatPanel({
         </div>
         <div>
           <div className="chat-title">Revenue analyst</div>
-          <div className="chat-sub">every number comes from tools</div>
+          <div className="chat-sub">
+            {deepMode ? 'deep: plans and delegates to subagents' : 'every number comes from tools'}
+          </div>
         </div>
+        <div className="spacer" />
+        <button
+          className={deepMode ? 'chip deep-toggle on' : 'chip deep-toggle'}
+          aria-pressed={deepMode}
+          disabled={busy}
+          onClick={() => {
+            // The deep agent keeps different graph state, so flipping the
+            // switch starts a fresh conversation thread.
+            setDeepMode((v) => !v);
+            conversationId.current = null;
+          }}
+        >
+          Deep
+        </button>
       </div>
 
       <div className="chat-scroll" ref={scrollRef}>

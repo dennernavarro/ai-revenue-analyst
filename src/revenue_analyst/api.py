@@ -28,6 +28,7 @@ from pydantic import BaseModel
 
 from revenue_analyst.agents.pricing_review import build_pricing_review
 from revenue_analyst.agents.v1_react import build_agent
+from revenue_analyst.agents.v3_deep import build_deep_agent
 from revenue_analyst.analytics import (
     BookingPace,
     CalendarDay,
@@ -64,6 +65,9 @@ class ChatRequest(BaseModel):
     view_start: date | None = None
     view_end: date | None = None
     """The calendar month on screen (half-open), so "this month" resolves."""
+    deep: bool = False
+    """Route the message to the deep agent (lead plans and delegates to
+    subagents) instead of the plain tool-calling agent."""
 
 
 class ToolCallInfo(BaseModel):
@@ -147,6 +151,9 @@ def create_app(
     checkpointer = checkpointer or sqlite_checkpointer(settings.state_dir)
     as_of = _resolve_as_of(pms)
     agent = build_agent(pms, as_of, model=model or settings.model, checkpointer=checkpointer)
+    deep_agent = build_deep_agent(
+        pms, as_of, model=model or settings.model, checkpointer=checkpointer
+    )
     publisher = pms if settings.rate_publication and isinstance(pms, RatePublisher) else None
     review_workflow = build_pricing_review(
         pms, as_of, model=model or settings.model, checkpointer=checkpointer, publisher=publisher
@@ -195,6 +202,7 @@ def create_app(
         POST /chat stays for simple API clients."""
         from fastapi.responses import StreamingResponse
 
+        chat_agent = deep_agent if request.deep else agent
         conversation_id = request.conversation_id or uuid.uuid4().hex
         config = {"configurable": {"thread_id": conversation_id}}
 
@@ -203,7 +211,7 @@ def create_app(
 
         def events():
             yield sse({"type": "start", "conversation_id": conversation_id})
-            stream = agent.stream(
+            stream = chat_agent.stream(
                 {"messages": [HumanMessage(_chat_input(pms, request))]},
                 config,
                 stream_mode=["updates", "messages"],
@@ -259,10 +267,13 @@ def create_app(
 
     @app.post("/chat")
     def chat(request: ChatRequest) -> ChatResponse:
+        chat_agent = deep_agent if request.deep else agent
         conversation_id = request.conversation_id or uuid.uuid4().hex
         config = {"configurable": {"thread_id": conversation_id}}
-        previous = len(agent.get_state(config).values.get("messages", []))
-        result = agent.invoke({"messages": [HumanMessage(_chat_input(pms, request))]}, config)
+        previous = len(chat_agent.get_state(config).values.get("messages", []))
+        result = chat_agent.invoke(
+            {"messages": [HumanMessage(_chat_input(pms, request))]}, config
+        )
 
         new_messages = result["messages"][previous + 1 :]
         tool_calls = [
