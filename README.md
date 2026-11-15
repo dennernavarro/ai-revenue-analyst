@@ -45,8 +45,11 @@ docker compose up --build
 
 Then open **http://localhost:8000/ui** — property switcher, KPI row, the
 month-by-month occupancy calendar (nightly rate and nights sold per day),
-room-category occupancy, and the chat panel with visible tool calls and
-approve/decline cards for pricing reviews.
+room-category occupancy, and the chat panel with visible tool activity and
+approve/decline cards for pricing reviews. The **Deep** toggle in the chat
+header switches to the deep agent: the panel turns amber, suggestions become
+portfolio-sized missions, and you watch it plan and delegate to specialist
+subagents through delegation cards.
 
 For frontend development, run the API (`uv run uvicorn
 revenue_analyst.api:create_app --factory`) and, in `frontend/`,
@@ -154,11 +157,11 @@ frontend/ (React dashboard, served at /ui)
         │
 cli.py / review.py / api.py          ← entry points
         │
-agents/  (chat agent · deep agent · pricing-review workflow)
+agents/  (chat agent · deep agent with subagents · pricing-review workflow)
         │
 tools.py (read-only @tool) → analytics.py (pure calculations)
         │
-pms/provider.py (Protocol) → pms/mock.py → data/*.json
+pms/provider.py (read + write ports) → pms/factory.py → pms/mock.py → data/*.json
 ```
 
 Design rules the codebase follows:

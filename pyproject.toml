@@ -1,6 +1,6 @@
 [project]
 name = "revenue-analyst"
-version = "1.0.0"
+version = "1.1.0"
 description = "AI Revenue Analyst — a learning project for LangChain, LangGraph and Deep Agents"
 readme = "README.md"
 requires-python = ">=3.11"
