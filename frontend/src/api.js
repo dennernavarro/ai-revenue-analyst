@@ -25,6 +25,7 @@ export async function chatStream(message, conversationId, view, onEvent) {
       property_id: view.propertyId,
       view_start: view.monthStart,
       view_end: view.monthEnd,
+      deep: view.deep ?? false,
     }),
   });
   if (!res.ok) throw new Error((await res.text()) || res.statusText);

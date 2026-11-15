@@ -5,12 +5,115 @@ import { api, chatStream } from '../api.js';
 
 const SUGGESTIONS = ['Compare with last month', 'Show weekend rates', 'Why is pace low?'];
 
+// Deep mode shines on portfolio-sized, multi-step missions — the chips
+// should invite exactly those, not single-tool questions.
+const DEEP_SUGGESTIONS = [
+  'Review all properties for next quarter',
+  'Compare every property with last year',
+  'Which property needs pricing action first?',
+];
+
 const GearIcon = () => (
   <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
     <circle cx="12" cy="12" r="3" />
     <path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.2 2.2M16.9 16.9l2.2 2.2M19.1 4.9l-2.2 2.2M7.1 16.9l-2.2 2.2" />
   </svg>
 );
+
+const BranchIcon = () => (
+  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <circle cx="6" cy="6" r="2.5" />
+    <circle cx="6" cy="18" r="2.5" />
+    <circle cx="18" cy="12" r="2.5" />
+    <path d="M8.5 6H13a3 3 0 0 1 3 3v0M8.5 18H13a3 3 0 0 0 3-3v0" />
+  </svg>
+);
+
+const SUBAGENT_NAMES = {
+  'performance-analyst': 'Performance analyst',
+  'pacing-analyst': 'Pacing analyst',
+  'general-purpose': 'General assistant',
+};
+
+const titleCase = (slug) =>
+  String(slug || '')
+    .split('-')
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
+
+const fmtDate = (iso) => {
+  const d = new Date(`${iso}T00:00:00Z`);
+  return Number.isNaN(d.getTime())
+    ? iso
+    : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+};
+
+function describeToolCall(call) {
+  const a = call.args || {};
+  const range =
+    a.start_date && a.end_date ? ` · ${fmtDate(a.start_date)} → ${fmtDate(a.end_date)}` : '';
+  const prop = a.property_id ? ` — ${titleCase(a.property_id)}` : '';
+  switch (call.name) {
+    case 'list_properties':
+      return { kind: 'chip', label: 'Looking up the property list' };
+    case 'get_performance':
+      return { kind: 'chip', label: `Analyzing performance${prop}${range}` };
+    case 'get_booking_pace':
+      return { kind: 'chip', label: `Checking booking pace${prop}${range}` };
+    case 'get_rates':
+      return { kind: 'chip', label: `Reviewing published rates${prop}${range}` };
+    case 'task':
+      return {
+        kind: 'delegate',
+        agent: SUBAGENT_NAMES[a.subagent_type] || titleCase(a.subagent_type),
+        detail: a.description || '',
+      };
+    case 'write_todos':
+      return { kind: 'plan', todos: Array.isArray(a.todos) ? a.todos : [] };
+    case 'write_file':
+      return { kind: 'chip', label: `Saving notes${a.file_path ? ` (${a.file_path})` : ''}` };
+    case 'read_file':
+    case 'ls':
+      return { kind: 'chip', label: 'Reading workspace notes' };
+    default:
+      return { kind: 'chip', label: titleCase(call.name) };
+  }
+}
+
+function ToolActivity({ call }) {
+  const info = describeToolCall(call);
+  if (info.kind === 'delegate') {
+    return (
+      <div className="delegate-card">
+        <div className="delegate-head">
+          <BranchIcon /> Delegated to <strong>{info.agent}</strong>
+        </div>
+        {info.detail && <div className="delegate-detail">{info.detail}</div>}
+      </div>
+    );
+  }
+  if (info.kind === 'plan') {
+    return (
+      <div className="plan-card">
+        <div className="delegate-head">
+          <GearIcon /> Planning
+        </div>
+        <ul className="plan-list">
+          {info.todos.map((todo, i) => (
+            <li key={i} className={todo.status === 'completed' ? 'done' : undefined}>
+              {todo.content}
+            </li>
+          ))}
+        </ul>
+      </div>
+    );
+  }
+  return (
+    <span className="tool-chip">
+      <GearIcon /> {info.label}
+    </span>
+  );
+}
 
 export default function ChatPanel({
   propertyId,
@@ -24,6 +127,7 @@ export default function ChatPanel({
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
+  const [deepMode, setDeepMode] = useState(false);
   const conversationId = useRef(null);
   const scrollRef = useRef(null);
   const append = (msg) => setMessages((prev) => [...prev, msg]);
@@ -40,7 +144,7 @@ export default function ChatPanel({
     setBusy(true);
     append({ kind: 'user', text: question });
     try {
-      const view = { propertyId, monthStart: month.start, monthEnd: month.end };
+      const view = { propertyId, monthStart: month.start, monthEnd: month.end, deep: deepMode };
       await chatStream(question, conversationId.current, view, (event) => {
         if (event.type === 'start') {
           conversationId.current = event.conversation_id;
@@ -128,7 +232,7 @@ export default function ChatPanel({
   const streamingNow = messages.some((m) => m.streaming);
 
   return (
-    <aside className="chat">
+    <aside className={deepMode ? 'chat deep' : 'chat'}>
       <div className="chat-head">
         <div className="chat-mark" aria-hidden="true">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -137,15 +241,32 @@ export default function ChatPanel({
         </div>
         <div>
           <div className="chat-title">Revenue analyst</div>
-          <div className="chat-sub">every number comes from tools</div>
+          <div className="chat-sub">
+            {deepMode ? 'deep: plans and delegates to subagents' : 'every number comes from tools'}
+          </div>
         </div>
+        <div className="spacer" />
+        <button
+          className={deepMode ? 'chip deep-toggle on' : 'chip deep-toggle'}
+          aria-pressed={deepMode}
+          disabled={busy}
+          onClick={() => {
+            // The deep agent keeps different graph state, so flipping the
+            // switch starts a fresh conversation thread.
+            setDeepMode((v) => !v);
+            conversationId.current = null;
+          }}
+        >
+          Deep
+        </button>
       </div>
 
       <div className="chat-scroll" ref={scrollRef}>
         {messages.length === 0 && (
           <div className="chat-empty">
-            Ask about {propertyName}&apos;s performance, booking pace or rates — or run a pricing
-            review for {monthLabel}.
+            {deepMode
+              ? 'Deep mode: give the lead analyst a portfolio-sized mission. It will plan the work, delegate to specialist subagents and synthesize their reports.'
+              : `Ask about ${propertyName}'s performance, booking pace or rates — or run a pricing review for ${monthLabel}.`}
           </div>
         )}
         {messages.map((m, i) => {
@@ -160,9 +281,7 @@ export default function ChatPanel({
             return (
               <div key={i} className="tool-chips">
                 {m.calls.map((c, j) => (
-                  <span key={j} className="tool-chip">
-                    <GearIcon /> {c.name}({Object.values(c.args).join(', ')})
-                  </span>
+                  <ToolActivity key={j} call={c} />
                 ))}
               </div>
             );
@@ -219,7 +338,7 @@ export default function ChatPanel({
       </div>
 
       <div className="chat-suggestions">
-        {SUGGESTIONS.map((s) => (
+        {(deepMode ? DEEP_SUGGESTIONS : SUGGESTIONS).map((s) => (
           <button key={s} className="chip" onClick={() => send(s)} disabled={busy}>
             {s}
           </button>

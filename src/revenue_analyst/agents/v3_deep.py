@@ -1,21 +1,28 @@
-"""Stage 6: a deep agent — planning, subagents, context isolation.
+"""Stage 6 (revisited): a deep agent with FORCED delegation.
 
-What deepagents adds on top of create_agent:
+The first version gave the lead agent the full tool belt — and the Stage 6
+experiment showed that capable models then correctly skip the ceremony:
+no write_todos, no task(), traces identical to the plain agent at higher
+cost. The lesson was recorded as a design lever:
 
-- write_todos: the agent PLANS before acting and checks steps off as it goes.
-- task(): spawns SUBAGENTS whose context is isolated — a per-property deep
-  dive burns its own tokens and returns only a summary to the lead agent.
-- A virtual filesystem (ls / read_file / write_file) as scratch space.
+    subagents earn their cost when (a) the work doesn't fit one context, or
+    (b) the lead CANNOT do the work itself because it doesn't hold the tools.
 
-When is this worth it? For long-horizon, multi-step work where a single
-context window would drown in tool results — "review Q1 for ALL properties
-and recommend actions per property". For "how was August?", the plain agent
-is strictly better: cheaper, faster, fewer moving parts. Run both on the same
-big task (cli.py --deep) and compare the ⚙ traces — that comparison is the
-lesson of this stage.
+This version pulls lever (b). The lead holds NO domain tools — only the
+deepagents built-ins (write_todos, task, the virtual filesystem). Every
+number must come back from a subagent report, so planning and delegation are
+the only way to answer:
 
-deepagents is still 0.x and its API moves between minors; pyproject pins
-the minor version for that reason.
+    lead (no tools) ── task() ──> performance-analyst (list, performance)
+                   ── task() ──> pacing-analyst (list, pace, rates)
+
+Each task() call runs in an ISOLATED context: a subagent can burn thousands
+of tokens on tool results, and only its final summary returns to the lead.
+That is the whole point of the architecture — watch the ⚙ trace in the CLI
+to see it happen.
+
+deepagents is still 0.x and its API moves between minors; pyproject pins the
+minor version for that reason.
 """
 
 from __future__ import annotations
@@ -40,18 +47,17 @@ fraction (0..1); report it as a percentage."""
 
 LEAD_PROMPT = """\
 You are the LEAD revenue analyst for a portfolio of short-term rental
-properties. For any non-trivial request:
+properties. You have NO data tools of your own: every number must come from
+your subagents, so your job is to plan, delegate and synthesize.
 
 1. Plan first with write_todos and keep the plan updated as you go.
-2. Delegate the heavy lifting to your subagents — performance-analyst for
-   realized results, pacing-analyst for future windows — one task per
-   property, with precise property ids and ISO date ranges.
-3. Collect their findings and write the final report yourself: lead with the
+2. Delegate with task(): performance-analyst for realized results,
+   pacing-analyst for future windows — one focused task per property and
+   window, with precise property ids and ISO date ranges in the task
+   description.
+3. Collect the reports and write the final answer yourself: lead with the
    portfolio-level conclusion, then per-property evidence, then recommended
-   next steps.
-
-For trivial single-number questions, skip the ceremony and call a tool
-directly.
+   next steps. Quote only numbers your subagents reported.
 
 {rules}"""
 
@@ -100,13 +106,17 @@ def build_deep_agent(
                 "on-the-books vs capacity, published rates."
             ),
             "system_prompt": PACING_PROMPT.format(rules=rules),
-            "tools": [by_name["get_booking_pace"], by_name["get_rates"]],
+            "tools": [
+                by_name["list_properties"],
+                by_name["get_booking_pace"],
+                by_name["get_rates"],
+            ],
         },
     ]
 
     return create_deep_agent(
         model=model,
-        tools=tools,
+        tools=[],  # forced delegation: the lead cannot touch data itself
         system_prompt=LEAD_PROMPT.format(rules=rules),
         subagents=subagents,
         checkpointer=checkpointer,

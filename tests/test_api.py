@@ -174,6 +174,19 @@ def test_chat_stream_emits_tool_token_and_done_events(client):
     assert "3 properties" in reply
 
 
+def test_chat_routes_to_the_deep_agent_when_asked(scripted_model):
+    from langchain_core.messages import AIMessage as AI
+
+    model = scripted_model([AI(content="Deep answer."), AI(content="Plain answer.")])
+    app = create_app(pms=MockPMS(DATA_DIR), model=model, checkpointer=InMemorySaver())
+    deep_client = TestClient(app)
+
+    deep = deep_client.post("/chat", json={"message": "hi", "deep": True}).json()
+    assert deep["reply"] == "Deep answer."
+    plain = deep_client.post("/chat", json={"message": "hi"}).json()
+    assert plain["reply"] == "Plain answer."
+
+
 def test_duplicate_review_requests_return_the_same_pending_review(scripted_model):
     from revenue_analyst.agents.pricing_review import RateProposal
 

@@ -32,3 +32,24 @@ space.
 
 **Takeaway:** reach for a deep agent when the task outgrows one context;
 until then `create_agent` is cheaper, faster and easier to debug.
+
+## Postscript: pulling the forced-delegation lever
+
+We later rebuilt v3 with the lead holding NO domain tools (only write_todos,
+task and the filesystem) — lever (b) above. Delegation immediately became
+real: the portfolio review produced a todo plan and six parallel task()
+calls (one pacing + one performance dive per property), each in an isolated
+context, with the lead synthesizing the reports.
+
+Two new lessons came with it:
+
+- *Multi-hop numbers play telephone.* The lead can garble figures while
+  rewriting subagent reports (we watched one summary mix a nights count into
+  an occupancy line). With a single agent, the number goes tool → answer;
+  with delegation it goes tool → subagent prose → lead prose. Structured
+  subagent outputs (response_format) would be the fix at scale.
+- *Parallel subagents stress the plumbing.* One run died inside LangGraph's
+  executor ("cannot schedule new futures after shutdown") with six
+  concurrent task() calls over the SQLite checkpointer; later runs were
+  clean. Concurrency bugs live at the infrastructure layer, not the prompt
+  layer.
