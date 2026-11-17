@@ -50,7 +50,7 @@ def test_performance_endpoint(client):
     assert response.status_code == 200
     body = response.json()
     assert body["nights_available"] == 31
-    assert body["adr"] == pytest.approx(510.0)
+    assert body["adr"] == pytest.approx(525.33, abs=0.01)
 
 
 def test_calendar_endpoint(client):
@@ -114,12 +114,12 @@ def test_review_approval_flow(scripted_model):
 
     started = review_client.post(
         "/reviews",
-        json={"property_id": "mountain-cabins", "start": "2027-01-01", "end": "2027-02-01"},
+        json={"property_id": "mountain-cabins", "start": "2027-03-01", "end": "2027-04-01"},
     ).json()
     assert started["status"] == "pending_approval"
     assert started["proposal"]["adjustment_pct"] == -10
     assert 0 < len(started["target_days"]) <= 31
-    assert all(d.startswith("2027-01-") for d in started["target_days"])
+    assert all(d.startswith("2027-03-") for d in started["target_days"])
 
     decided = review_client.post(
         f"/reviews/{started['review_id']}/decision", json={"approved": True}
@@ -198,7 +198,7 @@ def test_duplicate_review_requests_return_the_same_pending_review(scripted_model
     )
     app = create_app(pms=MockPMS(DATA_DIR), model=model, checkpointer=InMemorySaver())
     review_client = TestClient(app)
-    body = {"property_id": "mountain-cabins", "start": "2027-01-01", "end": "2027-02-01"}
+    body = {"property_id": "mountain-cabins", "start": "2027-03-01", "end": "2027-04-01"}
 
     first = review_client.post("/reviews", json=body).json()
     duplicate = review_client.post("/reviews", json=body).json()

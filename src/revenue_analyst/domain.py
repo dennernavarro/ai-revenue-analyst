@@ -105,6 +105,23 @@ class DailyRate(BaseModel):
     min_stay: int = 1
 
 
+class Event(BaseModel):
+    """A holiday or local event that moves demand for one property.
+
+    Nights [start, end) — end is exclusive, like check_out. `impact` is the
+    expected demand multiplier for this property: 1.0 neutral, 1.8 a peak
+    (Christmas at a ski cabin), 0.5 a slump (Thanksgiving at a business hotel).
+    """
+
+    property_id: str
+    name: str
+    kind: str
+    """"holiday" (public holiday period) or "event" (local happening)."""
+    start: date
+    end: date
+    impact: float
+
+
 class RatePublication(BaseModel):
     """Receipt returned by a RatePublisher after rates were changed."""
 

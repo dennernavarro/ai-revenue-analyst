@@ -6,7 +6,7 @@ from datetime import datetime
 
 from pydantic import BaseModel
 
-from revenue_analyst.domain import DailyRate, Property, Reservation
+from revenue_analyst.domain import DailyRate, Event, Property, Reservation
 
 
 class PropertyDataset(BaseModel):
@@ -16,3 +16,4 @@ class PropertyDataset(BaseModel):
     property: Property
     reservations: list[Reservation]
     daily_rates: list[DailyRate]
+    events: list[Event] = []

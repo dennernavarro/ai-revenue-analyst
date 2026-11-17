@@ -46,7 +46,7 @@ from revenue_analyst.analytics import (
     on_the_books_nights,
     performance_summary,
 )
-from revenue_analyst.domain import Property, Reservation
+from revenue_analyst.domain import Event, Property, Reservation
 from revenue_analyst.llm import init_model
 from revenue_analyst.pms.provider import PMSProvider, RatePublisher
 
@@ -65,6 +65,30 @@ MAX_ADJUSTMENT_PCT = 25.0
 """Business policy: no single adjustment beyond ±25%, enforced in code."""
 
 
+def last_year_shift(events: list[Event], start: date, end: date) -> tuple[timedelta, str | None]:
+    """How far back "the same window last year" is, and which event aligned it.
+
+    Default: 364 days (weekdays align). When the window holds an event, shift
+    instead to that event's previous edition, rounded to whole weeks — Easter
+    and Thanksgiving land exactly on last year's, fixed-date holidays like
+    Christmas round back to 364 so weekdays still align. With several events,
+    the one with the strongest impact (either direction) decides.
+    `events` must reach back ~13 months before `start` to find the editions.
+    """
+    inside = [e for e in events if start <= e.start < end]
+    if not inside:
+        return LAST_YEAR_SHIFT, None
+    main = max(inside, key=lambda e: abs(e.impact - 1))
+    earlier = [
+        e for e in events
+        if e.name == main.name and e.start <= main.start - timedelta(days=300)
+    ]
+    if not earlier:
+        return LAST_YEAR_SHIFT, None
+    days = (main.start - max(earlier, key=lambda e: e.start).start).days
+    return timedelta(weeks=round(days / 7)), main.name
+
+
 def pace_benchmark(
     prop: Property,
     reservations: list[Reservation],
@@ -72,20 +96,20 @@ def pace_benchmark(
     as_of: datetime,
     start: date,
     end: date,
+    ly_shift: timedelta = LAST_YEAR_SHIFT,
 ) -> dict:
     """Is [start, end) pacing behind? The routing rule of the review, kept pure
     so the backtest replays exactly what the workflow decides.
 
-    Benchmark: what the same window (364 days earlier) had on the books at the
-    same lead time, minus PACE_TOLERANCE — seasonality comes for free. Pass
-    `ly_reservations=[]` (no history) to get the fixed-threshold fallback.
+    Benchmark: what the same window (`ly_shift` earlier, see last_year_shift)
+    had on the books at the same lead time, minus PACE_TOLERANCE — seasonality
+    comes for free. Pass `ly_reservations=[]` (no history) to get the
+    fixed-threshold fallback.
     """
     capacity = prop.unit_count * (end - start).days
     has_history = bool(ly_reservations)
     otb_now = on_the_books_nights(reservations, as_of, start, end)
-    otb_ly = on_the_books_nights(
-        ly_reservations, as_of - LAST_YEAR_SHIFT, start - LAST_YEAR_SHIFT, end - LAST_YEAR_SHIFT
-    )
+    otb_ly = on_the_books_nights(ly_reservations, as_of - ly_shift, start - ly_shift, end - ly_shift)
     required = otb_ly * PACE_TOLERANCE / capacity if has_history else HEALTHY_OTB_SHARE
     return {
         "basis": "last_year_same_lead_time" if has_history else "fixed_threshold",
@@ -122,8 +146,11 @@ You are a revenue analyst. A future stay window is pacing behind its
 benchmark ("pace_benchmark": normally the same window last year at the same
 lead time). Based ONLY on the analysis below (JSON), propose ONE rate
 adjustment within ±{max_pct}% and justify it with those numbers.
-"same_window_last_year" (final results) and the benchmark both use a 364-day
-shift so weekdays align.
+"same_window_last_year" (final results) and the benchmark both look back by
+"last_year_alignment.shift_days": 364 so weekdays align, or whole weeks to
+the previous edition of the event in the window (e.g. Easter). "events" lists
+the holidays and local events in the window with their demand impact (1.0
+neutral) — use them to explain why dates are strong or weak.
 
 Respect "rate_limits": published rates can never leave that band, so if
 current rates are already close to the floor, propose only the small cut that
@@ -158,10 +185,12 @@ def build_pricing_review(
         reservations = pms.get_reservations(prop.id, start, end)
         pace = booking_pace(prop, reservations, as_of, start, end)
         rates = pms.get_daily_rates(prop.id, start, end)
-        ly_start, ly_end = start - LAST_YEAR_SHIFT, end - LAST_YEAR_SHIFT
+        events = pms.get_events(prop.id, start - timedelta(days=400), end)
+        shift, aligned_on = last_year_shift(events, start, end)
+        ly_start, ly_end = start - shift, end - shift
         ly_reservations = pms.get_reservations(prop.id, ly_start, ly_end)
         last_year = performance_summary(prop, ly_reservations, ly_start, ly_end)
-        bench = pace_benchmark(prop, reservations, ly_reservations, as_of, start, end)
+        bench = pace_benchmark(prop, reservations, ly_reservations, as_of, start, end, shift)
 
         avg_rate = round(mean(r.rate for r in rates), 2) if rates else 0.0
         # Discounts are exhausted once the average sits at (or within 2% of)
@@ -199,6 +228,16 @@ def build_pricing_review(
                     "target_days": target_days,
                     "well_selling_days": len(calendar) - len(target_days),
                 },
+                "events": [
+                    {
+                        "name": e.name,
+                        "nights": f"{e.start.isoformat()}→{e.end.isoformat()}",
+                        "impact": e.impact,
+                    }
+                    for e in events
+                    if e.start < end and e.end > start
+                ],
+                "last_year_alignment": {"shift_days": shift.days, "aligned_on": aligned_on},
                 "same_window_last_year": {
                     "occupancy": round(last_year.occupancy, 4),
                     "adr": round(last_year.adr, 2),

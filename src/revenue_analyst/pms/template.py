@@ -30,7 +30,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from revenue_analyst.domain import DailyRate, Property, RatePublication, Reservation
+from revenue_analyst.domain import DailyRate, Event, Property, RatePublication, Reservation
 from revenue_analyst.pms.provider import PropertyNotFoundError  # noqa: F401  (raise it below)
 
 
@@ -78,6 +78,13 @@ class TemplatePMSAdapter:
         # TODO: one DailyRate per day in [start, end) for the REFERENCE
         # category: day, nightly rate, min_stay restriction.
         raise NotImplementedError("TemplatePMSAdapter.get_daily_rates: fill in the TODO")
+
+    def get_events(self, property_id: str, start: date, end: date) -> list[Event]:
+        # TODO: PMSs rarely hold an event calendar. Either return [] (benchmarks
+        # fall back to the plain 364-day comparison) or build one from the
+        # date rules: events.calendar(property_id, {"Thanksgiving": 1.3, ...},
+        # start, end) with impacts kept in your own per-property config.
+        return []
 
     # --- RatePublisher (write) — optional -------------------------------------
 

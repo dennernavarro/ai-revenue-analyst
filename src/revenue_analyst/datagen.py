@@ -8,6 +8,10 @@ whole stay — demand that finds no unit is lost. Occupancy, ADR, booking pace
 and calendar gaps all emerge from this single process, so the data stays
 internally consistent.
 
+Holidays and local events (events.py) multiply demand on their nights, lift
+their rates and are booked further ahead — with an impact chosen per
+property, so Thanksgiving fills the ski cabins and empties the city hotel.
+
 Bookings whose booking timestamp falls after AS_OF don't exist yet. That is
 what makes future months look "partially booked" — exactly what a revenue
 analyst reasons about.
@@ -33,6 +37,7 @@ from revenue_analyst.domain import (
     RoomType,
     Unit,
 )
+from revenue_analyst.events import calendar, impact_by_night
 
 HORIZON_START = date(2025, 1, 1)
 HORIZON_END = date(2027, 3, 31)
@@ -66,6 +71,8 @@ class PropertyProfile(BaseModel):
     mean_lead_days: float
     cancel_rate: float
     channels: dict[str, float]
+    event_impacts: dict[str, float] = {}
+    """Demand multiplier per event (names from events.RULES) for this property."""
 
 
 PROFILES = [
@@ -85,6 +92,11 @@ PROFILES = [
         mean_lead_days=45,
         cancel_rate=0.12,
         channels={"airbnb": 0.5, "vrbo": 0.25, "direct": 0.25},
+        event_impacts={
+            "MLK Day weekend": 1.2, "Presidents' Day weekend": 1.2, "Spring break": 1.4,
+            "Easter weekend": 1.5, "Memorial Day weekend": 1.6, "Independence Day": 1.8,
+            "Labor Day weekend": 1.6, "Thanksgiving": 1.3, "Christmas & New Year": 1.6,
+        },
     ),
     PropertyProfile(
         slug="urban-boutique",
@@ -105,6 +117,12 @@ PROFILES = [
         mean_lead_days=14,
         cancel_rate=0.18,
         channels={"booking.com": 0.45, "expedia": 0.2, "direct": 0.35},
+        event_impacts={
+            # Business hotel: festivals and the marathon fill it, holidays empty it.
+            "Lollapalooza": 2.0, "Chicago Marathon": 1.8, "Easter weekend": 0.8,
+            "Memorial Day weekend": 0.8, "Independence Day": 0.7, "Labor Day weekend": 0.8,
+            "Thanksgiving": 0.5, "Christmas & New Year": 0.6,
+        },
     ),
     PropertyProfile(
         slug="mountain-cabins",
@@ -122,6 +140,11 @@ PROFILES = [
         mean_lead_days=30,
         cancel_rate=0.10,
         channels={"airbnb": 0.4, "direct": 0.4, "vrbo": 0.2},
+        event_impacts={
+            "Christmas & New Year": 2.0, "MLK Day weekend": 1.5, "X Games": 1.8,
+            "Presidents' Day weekend": 1.6, "Spring break": 1.3, "Food & Wine Classic": 1.7,
+            "Independence Day": 1.5, "Labor Day weekend": 1.2, "Thanksgiving": 1.3,
+        },
     ),
 ]
 
@@ -144,10 +167,14 @@ def _each_day(start: date, end: date):
         day += timedelta(days=1)
 
 
-def _build_rates(profile: PropertyProfile, property_id: str) -> list[DailyRate]:
+def _build_rates(
+    profile: PropertyProfile, property_id: str, impacts: dict[date, float]
+) -> list[DailyRate]:
     rates = []
     for day in _each_day(HORIZON_START, HORIZON_END):
-        factor = profile.month_factors[day.month - 1]
+        # Event nights price half of their demand impact (1.8 → +40%).
+        event = 1 + (impacts.get(day, 1.0) - 1) / 2
+        factor = profile.month_factors[day.month - 1] * event
         is_weekend = day.weekday() in (4, 5)  # Friday and Saturday nights
         uplift = profile.weekend_rate_uplift if is_weekend else 1.0
         rates.append(
@@ -187,7 +214,9 @@ def generate_dataset(profile: PropertyProfile) -> PropertyDataset:
         max_rate=round(profile.base_rate * 1.8),
     )
 
-    daily_rates = _build_rates(profile, prop.id)
+    events = calendar(prop.id, profile.event_impacts, HORIZON_START, HORIZON_END)
+    impacts = impact_by_night(events)
+    daily_rates = _build_rates(profile, prop.id, impacts)
     rate_by_day = {r.day: r.rate for r in daily_rates}
 
     occupied: dict[str, set[date]] = {u.id: set() for u in units}
@@ -199,12 +228,15 @@ def generate_dataset(profile: PropertyProfile) -> PropertyDataset:
             profile.daily_demand
             * profile.month_factors[check_in.month - 1]
             * profile.dow_factors[check_in.weekday()]
+            * impacts.get(check_in, 1.0)
         )
+        # Peaks are booked further ahead; slumps keep the usual lead time.
+        mean_lead = profile.mean_lead_days * max(1.0, impacts.get(check_in, 1.0))
         for _ in range(_poisson(rng, demand)):
             # Draw everything up front so the RNG sequence stays stable even
             # when a request is discarded below.
             los = min(21, 1 + int(rng.expovariate(1.0 / max(profile.mean_los - 1.0, 0.1))))
-            lead = min(365, int(rng.expovariate(1.0 / profile.mean_lead_days)))
+            lead = min(365, int(rng.expovariate(1.0 / mean_lead)))
             booked_time = time(rng.randint(6, 23), rng.randint(0, 59))
             channel = rng.choices(list(profile.channels), weights=list(profile.channels.values()))
             cancel_roll = rng.random()
@@ -252,7 +284,8 @@ def generate_dataset(profile: PropertyProfile) -> PropertyDataset:
 
     reservations.sort(key=lambda r: (r.check_in, r.id))
     return PropertyDataset(
-        as_of=AS_OF, property=prop, reservations=reservations, daily_rates=daily_rates
+        as_of=AS_OF, property=prop, reservations=reservations, daily_rates=daily_rates,
+        events=events,
     )
 
 
