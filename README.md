@@ -196,6 +196,11 @@ This project was built incrementally as a learning journey through modern
 agent tooling — the stage-by-stage write-ups, including what hurt and what
 each framework actually buys you, live in [docs/notes/](docs/notes/).
 
+Project docs: [spec](docs/SPEC.md), [status](docs/STATUS.md),
+[plan](docs/PLAN.md), [process](docs/PROCESS.md),
+[code standards](docs/CODE_STANDARDS.md), [tech stack](docs/TECH_STACK.md)
+and [brand](docs/BRAND.md).
+
 ## License
 
 [Apache-2.0](LICENSE)
