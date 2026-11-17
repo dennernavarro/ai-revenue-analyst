@@ -192,6 +192,16 @@ uv run python -m revenue_analyst.evals              # local run + pass/fail repo
 uv run python -m revenue_analyst.evals --langsmith  # also log a LangSmith experiment
 ```
 
+Backtest of the pricing-review routing rule (no LLM key needed): replays the
+"is this window behind?" decision at 30/60/90 days before every finished
+month and scores it against what actually happened, next to the old fixed
+40% threshold:
+
+```bash
+uv run python -m revenue_analyst.backtest            # precision / recall / accuracy
+uv run python -m revenue_analyst.backtest --verbose  # plus every decision
+```
+
 This project was built incrementally as a learning journey through modern
 agent tooling — the stage-by-stage write-ups, including what hurt and what
 each framework actually buys you, live in [docs/notes/](docs/notes/).

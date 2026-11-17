@@ -21,21 +21,27 @@ behaviour, and we need a way to tell whether a change helps before it ships.
 
 ---
 
-## Phase 1 — Measurement: backtesting and seasonal evals
+## Phase 1 — Measurement: backtesting and seasonal evals 🚧 in progress
 
 **Goal:** score any pricing rule on history before it reaches users.
 
-- Backtest harness (`backtest.py` + `scripts/`): replay the review at past
-  `as_of` dates over the seeded history; report per window what it would have
-  done (no action / discount / days targeted) and what actually happened
-  (final occupancy, revenue vs last year).
-- Scoring: did "behind" windows actually end below LY? Did "no action"
-  windows end at/above LY? (precision / recall of the routing rule.)
-- Evals (`evals.py`): add seasonal questions — "how does December compare to
-  last December?", "is January pacing behind?" — with ground truth computed
-  from `analytics.py`.
-- Extend simulated history to ≥ 2 full years before "today" so multi-year
-  comparisons are possible (`datagen.HORIZON_START`).
+- [x] Backtest harness (`python -m revenue_analyst.backtest`): replays the
+      routing rule at 30/60/90 days before each finished month, scores it
+      against the do-nothing outcome, next to the fixed 40% rule. The rule
+      is one pure function (`pace_benchmark`) shared by the review and the
+      backtest.
+- [x] Scoring: precision / recall / accuracy of "behind" flags, per lead time.
+- [x] Baseline recorded in STATUS.md.
+- [ ] Day-level scoring (were the targeted days the ones that stayed empty?).
+- [ ] Evals (`evals.py`): add seasonal questions — "how does December compare
+      to last December?", "is January pacing behind?" — with ground truth
+      computed from `analytics.py`.
+- [ ] Extend simulated history to ≥ 2 full years before "today" so
+      multi-year comparisons are possible and the backtest has more windows
+      (`datagen.HORIZON_START`; today only Jan–Oct 2026 are testable).
+- [ ] Low-signal guard, informed by the baseline: when last year had too few
+      nights on the books at this lead time, report "too early to judge"
+      instead of flagging (most false flags are 0–4% vs 0–4%).
 
 **Done when:** one command prints a backtest report for all properties, and
 the Phase 0 rule has a recorded baseline score in STATUS.md.

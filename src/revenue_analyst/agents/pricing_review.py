@@ -46,6 +46,7 @@ from revenue_analyst.analytics import (
     on_the_books_nights,
     performance_summary,
 )
+from revenue_analyst.domain import Property, Reservation
 from revenue_analyst.llm import init_model
 from revenue_analyst.pms.provider import PMSProvider, RatePublisher
 
@@ -62,6 +63,37 @@ on-the-books share of capacity above which no action is proposed."""
 
 MAX_ADJUSTMENT_PCT = 25.0
 """Business policy: no single adjustment beyond ±25%, enforced in code."""
+
+
+def pace_benchmark(
+    prop: Property,
+    reservations: list[Reservation],
+    ly_reservations: list[Reservation],
+    as_of: datetime,
+    start: date,
+    end: date,
+) -> dict:
+    """Is [start, end) pacing behind? The routing rule of the review, kept pure
+    so the backtest replays exactly what the workflow decides.
+
+    Benchmark: what the same window (364 days earlier) had on the books at the
+    same lead time, minus PACE_TOLERANCE — seasonality comes for free. Pass
+    `ly_reservations=[]` (no history) to get the fixed-threshold fallback.
+    """
+    capacity = prop.unit_count * (end - start).days
+    has_history = bool(ly_reservations)
+    otb_now = on_the_books_nights(reservations, as_of, start, end)
+    otb_ly = on_the_books_nights(
+        ly_reservations, as_of - LAST_YEAR_SHIFT, start - LAST_YEAR_SHIFT, end - LAST_YEAR_SHIFT
+    )
+    required = otb_ly * PACE_TOLERANCE / capacity if has_history else HEALTHY_OTB_SHARE
+    return {
+        "basis": "last_year_same_lead_time" if has_history else "fixed_threshold",
+        "on_the_books_share": round(otb_now / capacity, 4),
+        "last_year_share_same_lead_time": round(otb_ly / capacity, 4) if has_history else None,
+        "required_share": round(required, 4),
+        "behind": otb_now / capacity < required,
+    }
 
 
 class RateProposal(BaseModel):
@@ -127,19 +159,9 @@ def build_pricing_review(
         pace = booking_pace(prop, reservations, as_of, start, end)
         rates = pms.get_daily_rates(prop.id, start, end)
         ly_start, ly_end = start - LAST_YEAR_SHIFT, end - LAST_YEAR_SHIFT
-        ly_as_of = as_of - LAST_YEAR_SHIFT
         ly_reservations = pms.get_reservations(prop.id, ly_start, ly_end)
         last_year = performance_summary(prop, ly_reservations, ly_start, ly_end)
-        has_history = bool(ly_reservations)
-
-        # Benchmark: what the same window had on the books at the same lead
-        # time last year (minus a tolerance) — seasonality comes for free.
-        capacity = pace.capacity_nights
-        otb_now = pace.pace[0].nights_on_the_books
-        otb_ly = on_the_books_nights(ly_reservations, ly_as_of, ly_start, ly_end)
-        required_share = (
-            otb_ly * PACE_TOLERANCE / capacity if has_history else HEALTHY_OTB_SHARE
-        )
+        bench = pace_benchmark(prop, reservations, ly_reservations, as_of, start, end)
 
         avg_rate = round(mean(r.rate for r in rates), 2) if rates else 0.0
         # Discounts are exhausted once the average sits at (or within 2% of)
@@ -156,7 +178,7 @@ def build_pricing_review(
         target_days = [
             d.day.isoformat()
             for d in calendar
-            if d.capacity and d.nights_sold / d.capacity < required_share
+            if d.capacity and d.nights_sold / d.capacity < bench["required_share"]
         ]
 
         return {
@@ -172,15 +194,7 @@ def build_pricing_review(
                 else None,
                 "rate_limits": {"min": prop.min_rate, "max": prop.max_rate},
                 "rate_floor_reached": floor_reached,
-                "pace_benchmark": {
-                    "basis": "last_year_same_lead_time" if has_history else "fixed_threshold",
-                    "on_the_books_share": round(otb_now / capacity, 4),
-                    "last_year_share_same_lead_time": (
-                        round(otb_ly / capacity, 4) if has_history else None
-                    ),
-                    "required_share": round(required_share, 4),
-                    "behind": otb_now / capacity < required_share,
-                },
+                "pace_benchmark": bench,
                 "day_targeting": {
                     "target_days": target_days,
                     "well_selling_days": len(calendar) - len(target_days),
