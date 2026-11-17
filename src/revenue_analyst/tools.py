@@ -127,4 +127,30 @@ def build_tools(pms: PMSProvider, as_of: datetime) -> list[BaseTool]:
             ],
         }
 
-    return [list_properties, get_performance, get_booking_pace, get_rates]
+    @tool
+    def get_events(property_id: str, start_date: date, end_date: date) -> dict:
+        """Holidays and local events affecting one property in a date range.
+
+        Dates are ISO format (YYYY-MM-DD), half-open (end_date excluded). Each
+        event has its nights [start, end), a kind ("holiday" or "event") and
+        an impact: this property's typical demand multiplier (1.0 neutral,
+        2.0 = demand usually doubles, 0.5 = usually halves). Use it to explain
+        why dates are strong or weak.
+        """
+        try:
+            pms.get_property(property_id)
+        except PropertyNotFoundError:
+            return _unknown_property(pms, property_id)
+        events = pms.get_events(property_id, start_date, end_date)
+        return {
+            "property_id": property_id,
+            "events": [
+                {
+                    "name": e.name, "kind": e.kind, "start": e.start.isoformat(),
+                    "end": e.end.isoformat(), "impact": e.impact,
+                }
+                for e in events
+            ],
+        }
+
+    return [list_properties, get_performance, get_booking_pace, get_rates, get_events]

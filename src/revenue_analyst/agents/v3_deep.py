@@ -103,13 +103,14 @@ def build_deep_agent(
             "name": "pacing-analyst",
             "description": (
                 "Deep dive on FUTURE stay windows for one property: booking pace, "
-                "on-the-books vs capacity, published rates."
+                "on-the-books vs capacity, published rates, holidays and events."
             ),
             "system_prompt": PACING_PROMPT.format(rules=rules),
             "tools": [
                 by_name["list_properties"],
                 by_name["get_booking_pace"],
                 by_name["get_rates"],
+                by_name["get_events"],
             ],
         },
     ]

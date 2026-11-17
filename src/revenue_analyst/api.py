@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import json
 import uuid
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
@@ -26,7 +26,14 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.types import Command
 from pydantic import BaseModel
 
-from revenue_analyst.agents.pricing_review import build_pricing_review
+from revenue_analyst.agents.pricing_review import (
+    LAST_YEAR_SHIFT,
+    PEER_WINDOW_DAYS,
+    build_pricing_review,
+    last_year_shift,
+    night_outlook,
+    pace_benchmark,
+)
 from revenue_analyst.agents.v1_react import build_agent
 from revenue_analyst.agents.v3_deep import build_deep_agent
 from revenue_analyst.analytics import (
@@ -34,13 +41,15 @@ from revenue_analyst.analytics import (
     CalendarDay,
     PerformanceSummary,
     RoomTypeOccupancy,
+    SeasonMonth,
     booking_pace,
     daily_calendar,
     performance_summary,
     room_type_occupancy,
+    season_profile,
 )
 from revenue_analyst.config import Settings
-from revenue_analyst.domain import Property
+from revenue_analyst.domain import Event, Property
 from revenue_analyst.llm import message_text
 from revenue_analyst.persistence import sqlite_checkpointer
 from revenue_analyst.pms.mock import MockPMS
@@ -54,6 +63,29 @@ class PropertyInfo(BaseModel):
     units: int
     as_of: datetime
     """The dataset's simulated "today" — the frontend anchors its views on it."""
+
+
+class CalendarNight(CalendarDay):
+    """A calendar day plus how it compares with similar nights last year
+    (see pricing_review.night_outlook)."""
+
+    kind: str
+    peer_booked: float | None
+    last_year_final: int
+    status: str
+    arrival_blocked: bool
+
+
+class Benchmark(BaseModel):
+    """The pricing review's pace rule for a window — no LLM."""
+
+    basis: str
+    on_the_books_share: float
+    last_year_share_same_lead_time: float | None
+    required_share: float
+    behind: bool
+    shift_days: int
+    aligned_on: str | None
 
 
 class ChatRequest(BaseModel):
@@ -251,14 +283,64 @@ def create_app(
         return StreamingResponse(events(), media_type="text/event-stream")
 
     @app.get("/properties/{property_id}/calendar")
-    def property_calendar(property_id: str, start: date, end: date) -> list[CalendarDay]:
+    def property_calendar(property_id: str, start: date, end: date) -> list[CalendarNight]:
         prop = _property_or_404(property_id)
         _validate_range(start, end)
         if (end - start).days > 62:
             raise HTTPException(400, "request at most 62 days per call")
-        reservations = pms.get_reservations(property_id, start, end)
         rates = pms.get_daily_rates(property_id, start, end)
-        return daily_calendar(prop, reservations, rates, start, end)
+        days = daily_calendar(prop, pms.get_reservations(property_id, start, end), rates, start, end)
+        # Night outlook: the window + 2 weeks ahead (minimum stays), and last
+        # year ± the peer window.
+        pad = timedelta(days=PEER_WINDOW_DAYS)
+        ly_start, ly_end = start - LAST_YEAR_SHIFT - pad, end - LAST_YEAR_SHIFT + pad
+        nights = night_outlook(
+            prop,
+            pms.get_reservations(property_id, start, end + timedelta(days=14)),
+            pms.get_reservations(property_id, ly_start, ly_end),
+            {r.day: r.min_stay for r in rates},
+            pms.get_events(property_id, ly_start, end),
+            _resolve_as_of(pms), start, end,
+        )
+        return [
+            CalendarNight(
+                **day.model_dump(), kind=n.kind, peer_booked=n.peer_booked,
+                last_year_final=n.last_year_final, status=n.status,
+                arrival_blocked=n.arrival_blocked,
+            )
+            for day, n in zip(days, nights, strict=True)
+        ]
+
+    @app.get("/properties/{property_id}/events")
+    def property_events(property_id: str, start: date, end: date) -> list[Event]:
+        _property_or_404(property_id)
+        _validate_range(start, end)
+        return pms.get_events(property_id, start, end)
+
+    @app.get("/properties/{property_id}/benchmark")
+    def property_benchmark(property_id: str, start: date, end: date) -> Benchmark:
+        """On the books now vs the same window last year at the same lead
+        time, aligned on the window's main event — the review's routing rule."""
+        prop = _property_or_404(property_id)
+        _validate_range(start, end)
+        events = pms.get_events(property_id, start - timedelta(days=400), end)
+        shift, aligned_on = last_year_shift(events, start, end)
+        bench = pace_benchmark(
+            prop,
+            pms.get_reservations(property_id, start, end),
+            pms.get_reservations(property_id, start - shift, end - shift),
+            _resolve_as_of(pms), start, end, shift,
+        )
+        return Benchmark(**bench, shift_days=shift.days, aligned_on=aligned_on)
+
+    @app.get("/properties/{property_id}/seasons")
+    def property_seasons(property_id: str, year: int | None = None) -> list[SeasonMonth]:
+        """Peak/high/shoulder/low per month from realized occupancy — by
+        default last year's (the last complete year)."""
+        prop = _property_or_404(property_id)
+        year = year or _resolve_as_of(pms).year - 1
+        reservations = pms.get_reservations(property_id, date(year, 1, 1), date(year + 1, 1, 1))
+        return season_profile(prop, reservations, year)
 
     @app.get("/properties/{property_id}/room-types")
     def property_room_types(property_id: str, start: date, end: date) -> list[RoomTypeOccupancy]:

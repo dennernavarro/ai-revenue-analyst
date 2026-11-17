@@ -43,6 +43,8 @@ Rules:
   is always wrong for a full month.
 - Occupancy from tools is a fraction (0..1); present it as a percentage.
 - If the property is ambiguous, call list_properties and ask the user.
+- When explaining why dates are strong or weak, check get_events for
+  holidays and local events.
 - Be concise: lead with the answer, then the supporting numbers.
 """
 

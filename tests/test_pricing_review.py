@@ -239,3 +239,38 @@ def test_last_year_shift_rounds_to_whole_weeks():
     assert last_year_shift(xmas, date(2026, 6, 1), date(2026, 7, 1)) == (
         LAST_YEAR_SHIFT, None
     )
+
+
+def test_night_outlook_flags_single_nights_and_blocked_arrivals():
+    """Mountain Cabins, December 2026: the month is ahead of last year, yet
+    single nights are behind similar nights last year — and Dec 25 can't be
+    booked at all (2-night minimum, Dec 26 sold out)."""
+    from datetime import timedelta
+
+    from revenue_analyst.agents.pricing_review import PEER_WINDOW_DAYS, night_outlook
+
+    pms = MockPMS(DATA_DIR)
+    prop = pms.get_property("mountain-cabins")
+    start, end = date(2026, 12, 1), date(2027, 1, 1)
+    pad = timedelta(days=PEER_WINDOW_DAYS)
+    ly_start, ly_end = start - LAST_YEAR_SHIFT - pad, end - LAST_YEAR_SHIFT + pad
+    args = (
+        pms.get_reservations(prop.id, start, end + timedelta(days=14)),
+        {r.day: r.min_stay for r in pms.get_daily_rates(prop.id, start, end)},
+        pms.get_events(prop.id, ly_start, end),
+        AS_OF, start, end,
+    )
+    nights = {
+        n.day.day: n
+        for n in night_outlook(prop, args[0], pms.get_reservations(prop.id, ly_start, ly_end),
+                               *args[1:])
+    }
+    assert {d for d, n in nights.items() if n.status == "behind"} == {4, 5, 11, 17, 25, 28, 29}
+    assert nights[26].status == "sold_out"
+    assert nights[1].status == "too_early"  # similar nights last year were < 25% booked
+    assert nights[25].kind == "event" and nights[4].kind == "weekend"
+    assert [d for d, n in nights.items() if n.arrival_blocked] == [25]
+
+    # No history → nothing is called behind.
+    no_history = night_outlook(prop, args[0], [], *args[1:])
+    assert {n.status for n in no_history} <= {"no_history", "sold_out"}

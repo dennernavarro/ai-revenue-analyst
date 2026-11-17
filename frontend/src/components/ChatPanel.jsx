@@ -62,6 +62,8 @@ function describeToolCall(call) {
       return { kind: 'chip', label: `Checking booking pace${prop}${range}` };
     case 'get_rates':
       return { kind: 'chip', label: `Reviewing published rates${prop}${range}` };
+    case 'get_events':
+      return { kind: 'chip', label: `Checking holidays & events${prop}${range}` };
     case 'task':
       return {
         kind: 'delegate',
@@ -116,6 +118,10 @@ function ToolActivity({ call }) {
 }
 
 export default function ChatPanel({
+  hidden = false,
+  prefill,
+  onClose,
+  onOpen,
   propertyId,
   propertyName,
   month,
@@ -130,6 +136,14 @@ export default function ChatPanel({
   const [deepMode, setDeepMode] = useState(false);
   const conversationId = useRef(null);
   const scrollRef = useRef(null);
+  const inputRef = useRef(null);
+
+  // "Ask about this night" fills the box; the user sends it.
+  useEffect(() => {
+    if (!prefill) return;
+    setInput(prefill.text);
+    inputRef.current?.focus();
+  }, [prefill]);
   const append = (msg) => setMessages((prev) => [...prev, msg]);
 
   useEffect(() => {
@@ -186,6 +200,7 @@ export default function ChatPanel({
   async function startReview() {
     if (busy || reviewInFlight.current) return;
     reviewInFlight.current = true;
+    onOpen?.();
     setBusy(true);
     append({ kind: 'user', text: `Run a pricing review for ${monthLabel}.` });
     try {
@@ -232,7 +247,7 @@ export default function ChatPanel({
   const streamingNow = messages.some((m) => m.streaming);
 
   return (
-    <aside className={deepMode ? 'chat deep' : 'chat'}>
+    <aside className={deepMode ? 'chat deep' : 'chat'} hidden={hidden} aria-label="Chat with the analyst">
       <div className="chat-head">
         <div className="chat-mark" aria-hidden="true">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -240,7 +255,7 @@ export default function ChatPanel({
           </svg>
         </div>
         <div>
-          <div className="chat-title">Revenue analyst</div>
+          <div className="chat-title">Ask the analyst</div>
           <div className="chat-sub">
             {deepMode ? 'deep: plans and delegates to subagents' : 'every number comes from tools'}
           </div>
@@ -258,6 +273,11 @@ export default function ChatPanel({
           }}
         >
           Deep
+        </button>
+        <button type="button" className="icon-btn" aria-label="Close chat" onClick={onClose}>
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
+            <path d="M4 4l8 8M12 4l-8 8" />
+          </svg>
         </button>
       </div>
 
@@ -356,6 +376,7 @@ export default function ChatPanel({
         </label>
         <input
           id="chat-box"
+          ref={inputRef}
           value={input}
           onChange={(e) => setInput(e.target.value)}
           placeholder="Ask about performance, pace, rates…"
