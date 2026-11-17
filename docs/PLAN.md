@@ -8,7 +8,7 @@ behaviour, and we need a way to tell whether a change helps before it ships.
 
 ---
 
-## Phase 0 — Foundation ✅ code done, commit pending
+## Phase 0 — Foundation ✅ done (PR #2 open)
 
 **Goal:** a season-aware baseline and shared project docs.
 
@@ -17,7 +17,8 @@ behaviour, and we need a way to tell whether a change helps before it ships.
 - [x] Tests: seasonal case (below 40% but ahead of LY → no action) and the
       no-history fallback.
 - [x] Docs: BRAND, CODE_STANDARDS, PROCESS, SPEC, STATUS, TECH_STACK, PLAN.
-- [ ] Commit on a branch, PR, merge, release 1.2.0.
+- [x] Commit on a branch and open a PR (#2).
+- [ ] Merge, release 1.2.0.
 
 ---
 
@@ -32,7 +33,10 @@ behaviour, and we need a way to tell whether a change helps before it ships.
       backtest.
 - [x] Scoring: precision / recall / accuracy of "behind" flags, per lead time.
 - [x] Baseline recorded in STATUS.md.
-- [ ] Day-level scoring (were the targeted days the ones that stayed empty?).
+- [ ] Night-level scoring: replay a per-night rule next to the per-window
+      one and score both on history (were the flagged nights the ones that
+      ended below last year?). Gate for Phase 4: if night-level doesn't beat
+      window-level, Auto-pilot stays window-level.
 - [ ] Evals (`evals.py`): add seasonal questions — "how does December compare
       to last December?", "is January pacing behind?" — with ground truth
       computed from `analytics.py`.
@@ -48,25 +52,31 @@ the Phase 0 rule has a recorded baseline score in STATUS.md.
 
 ---
 
-## Phase 2 — Holiday and event calendar
+## Phase 2 — Holiday and event calendar 🚧 in progress
 
 **Goal:** holidays and local events are first-class, and last-year
 comparisons align by event, not by date.
 
-- Data: `data/events/<property>.json` — `{name, start, end, kind:
-  holiday|event, impact}`; public holidays per market (Easter, Carnival,
-  Thanksgiving, Christmas/New Year, local school breaks) plus local events
-  (ski-season opening, marathons, conferences).
-- Port: `PMSProvider` (or a separate `EventsProvider`) exposes events for a
-  range; mock reads the JSON.
-- Simulator realism (`datagen.py`): event demand/rate multipliers, longer lead
-  times for holidays, season-dependent lead time and cancellation rate — so
-  the mock data actually contains what we want to detect.
-- Event-aligned benchmark: when a window contains a moving holiday, compare
-  with the same holiday last year (e.g. Easter 2027 ↔ Easter 2026) instead of
-  the plain 364-day shift.
-- Chat: `get_events` tool so the agent can explain "Christmas week is strong
-  because…"; dashboard calendar marks event days.
+- [x] Date rules (`events.py`): US holidays incl. Easter, plus illustrative
+      local events (X Games, Food & Wine, Lollapalooza, Chicago Marathon);
+      impact per property (Thanksgiving ×1.3 at the cabins, ×0.5 at the city
+      hotel).
+- [x] Port: `PMSProvider.get_events`; mock stores events in the dataset,
+      the template returns `[]` (plain 364-day comparison).
+- [x] Simulator: event demand and rate multipliers, longer lead times for
+      peaks. Not yet: season-dependent cancellation rate.
+- [x] Event-aligned benchmark: shift to the previous edition of the window's
+      main event in whole weeks (Easter 2027 ↔ Easter 2026 = 357 days);
+      backtest gains an `event_aligned` rule.
+- [ ] Chat: `get_events` tool so the agent can explain "Christmas week is
+      strong because…"; `GET /properties/{id}/events`.
+- [ ] Calendar UI per the approved Claude Design canvas ("Revenue Calendar
+      Redesign"): clean cells (date, price, fill shade, event line, behind
+      dot), every detail in the day card, chat as a side panel, purple look.
+      BRAND.md updated to match.
+- [ ] Simulator bugs found on the way: event uplift publishes rates above
+      `max_rate` (Mountain Cabins Christmas $655 > $432), and low-season
+      rates fall below `min_rate` (Seaside Villa January $176 < $192).
 
 **Done when:** Easter/Carnival windows benchmark against the right dates, the
 chat names events in answers, and the backtest score does not regress.
@@ -90,7 +100,53 @@ comparison from tool data, and the dashboard shows the pace curve.
 
 ---
 
-## Phase 4 — Price increases on strong dates
+## Phase 4 — Auto-pilot: night-level reviews, queued for approval
+
+**Goal:** the deep agent reviews upcoming dates every day and lines up price
+(and minimum-stay) changes; nothing publishes without a person's OK.
+
+Why night-level: a month can be ahead while some of its nights are not.
+Prototype on the mock data (Nov 2026): Seaside Villa's December is ahead
+(52% vs 35%), yet all five Christmas nights are empty while similar nights
+last year were ~90% booked by now — a per-month check never sees it.
+
+- [ ] **Per-night benchmark**: each night vs last year's nights *of the same
+      type* (weekday / weekend / event night) within ±7 days, at the same
+      lead time, aligned by event. Pooling gives enough signal even for a
+      1-unit villa.
+- [ ] **Low-signal guard**: when those peers had < 25% booked by now, the
+      night is "too early to tell" (Watching), not a suggestion.
+- [ ] **Urgency**: nights closer to arrival need less evidence; far-out
+      nights need more.
+- [ ] **Group** flagged nights (gaps ≤ 1 night) into one suggestion each.
+- [ ] **Per-night prices**: the change applies night by night, clamped to
+      min/max rate; later, separate % for weekdays / weekends / event nights.
+- [ ] **Non-price fixes** (rule-based, no LLM): a night nobody can book —
+      e.g. a 2-night minimum next to a sold-out night (Mountain Cabins
+      Dec 25) — gets "allow 1-night stays" instead of a discount.
+- [ ] **Fact check**: every number and comparison in the agent's rationale
+      must match the analysis, else it is regenerated or hidden (live runs
+      produced "$275 is significantly above $290" and "0.0 booked last year"
+      when it was high).
+- [ ] **Cool-down**: no new suggestion for nights changed in the last 7 days.
+- [ ] **Queue**: persistent store for suggestions + audit log; Approve
+      publishes via `RatePublisher`, Not now snoozes a day, suggestions
+      withdraw themselves when bookings catch up or the dates pass.
+- [ ] **Scheduler**: daily run (default 07:00, next 120 days, all properties).
+- [ ] UI per the design: header switch, banner, Auto-pilot page grouped by
+      urgency, day card shows the night's suggestion.
+
+**Done when:** a daily run produces grouped, fact-checked suggestions that
+beat the window-level rule in the night-level backtest, and approving one
+publishes only its nights.
+
+**Open decision:** approval stays mandatory (current design). Letting
+Auto-pilot publish small changes on its own would change a core invariant
+(SPEC.md) and needs an explicit decision.
+
+---
+
+## Phase 5 — Price increases on strong dates
 
 **Goal:** capture peak demand, not just fill low demand.
 
@@ -106,7 +162,7 @@ bounded and approved like discounts, with backtest evidence.
 
 ---
 
-## Phase 5 — Seasonal rules: floors, ceilings and minimum stays
+## Phase 6 — Seasonal rules: floors, ceilings and minimum stays
 
 **Goal:** policies that change with the season and events.
 
@@ -123,7 +179,7 @@ can propose a min-stay change through the same approval flow.
 
 ---
 
-## Phase 6 — Forecast-based decisions
+## Phase 7 — Forecast-based decisions
 
 **Goal:** decide on expected final occupancy, not just "behind last year".
 
@@ -132,15 +188,15 @@ can propose a min-stay change through the same approval flow.
 - Seasonal occupancy/revenue targets per property; route on forecast vs
   target. Handles growth (new units, new listings) that "vs last year" gets
   wrong.
-- Multi-year averages to smooth noise; per-day benchmarks once history is
-  rich enough (replaces the `ponytail:` single-window benchmark).
+- Multi-year averages to smooth noise; replaces the pooled per-night
+  benchmark of Phase 4 once history is rich enough.
 
 **Done when:** the review routes on the forecast, and the backtest shows it
 beats the Phase 0 rule.
 
 ---
 
-## Phase 7 — Real data
+## Phase 8 — Real data
 
 **Goal:** run on a real PMS and market signal.
 
