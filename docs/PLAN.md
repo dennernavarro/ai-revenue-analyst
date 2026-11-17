@@ -68,12 +68,15 @@ comparisons align by event, not by date.
 - [x] Event-aligned benchmark: shift to the previous edition of the window's
       main event in whole weeks (Easter 2027 ↔ Easter 2026 = 357 days);
       backtest gains an `event_aligned` rule.
-- [ ] Chat: `get_events` tool so the agent can explain "Christmas week is
-      strong because…"; `GET /properties/{id}/events`.
-- [ ] Calendar UI per the approved Claude Design canvas ("Revenue Calendar
+- [x] Chat: `get_events` tool (chat + deep pacing analyst);
+      `GET /properties/{id}/events`, `/benchmark`, `/seasons`.
+- [x] Calendar UI per the approved Claude Design canvas ("Revenue Calendar
       Redesign"): clean cells (date, price, fill shade, event line, behind
       dot), every detail in the day card, chat as a side panel, purple look.
       BRAND.md updated to match.
+- [ ] Chat can't see minimum-stay blocks yet (it explains Dec 25 by the
+      holiday, not by "nobody can check in"): expose the night outlook as a
+      tool.
 - [ ] Simulator bugs found on the way: event uplift publishes rates above
       `max_rate` (Mountain Cabins Christmas $655 > $432), and low-season
       rates fall below `min_rate` (Seaside Villa January $176 < $192).
@@ -110,12 +113,13 @@ Prototype on the mock data (Nov 2026): Seaside Villa's December is ahead
 (52% vs 35%), yet all five Christmas nights are empty while similar nights
 last year were ~90% booked by now — a per-month check never sees it.
 
-- [ ] **Per-night benchmark**: each night vs last year's nights *of the same
-      type* (weekday / weekend / event night) within ±7 days, at the same
-      lead time, aligned by event. Pooling gives enough signal even for a
-      1-unit villa.
-- [ ] **Low-signal guard**: when those peers had < 25% booked by now, the
-      night is "too early to tell" (Watching), not a suggestion.
+- [x] **Per-night benchmark** (`pricing_review.night_outlook`): each night
+      vs last year's nights *of the same type* (weekday / weekend / event
+      night) within ±7 days, at the same lead time. Shown in the calendar
+      today; nothing acts on it until the night-level backtest backs it.
+- [x] **Low-signal guard** for nights: when those peers had < 25% booked by
+      now, the night is "too early to tell". (The month-level summary still
+      lacks it — see Phase 1.)
 - [ ] **Urgency**: nights closer to arrival need less evidence; far-out
       nights need more.
 - [ ] **Group** flagged nights (gaps ≤ 1 night) into one suggestion each.
@@ -123,7 +127,9 @@ last year were ~90% booked by now — a per-month check never sees it.
       min/max rate; later, separate % for weekdays / weekends / event nights.
 - [ ] **Non-price fixes** (rule-based, no LLM): a night nobody can book —
       e.g. a 2-night minimum next to a sold-out night (Mountain Cabins
-      Dec 25) — gets "allow 1-night stays" instead of a discount.
+      Dec 25) — gets "allow 1-night stays" instead of a discount. Detection
+      exists (`arrival_blocked`, shown in the day card); the suggestion
+      doesn't yet.
 - [ ] **Fact check**: every number and comparison in the agent's rationale
       must match the analysis, else it is regenerated or hidden (live runs
       produced "$275 is significantly above $290" and "0.0 booked last year"

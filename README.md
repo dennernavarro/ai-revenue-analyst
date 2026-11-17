@@ -43,11 +43,16 @@ uv run pytest
 docker compose up --build
 ```
 
-Then open **http://localhost:8000/ui** — property switcher, KPI row, the
-month-by-month occupancy calendar (nightly rate and nights sold per day),
-room-category occupancy, and the chat panel with visible tool activity and
-approve/decline cards for pricing reviews. The **Deep** toggle in the chat
-header switches to the deep agent: the panel turns amber, suggestions become
+Then open **http://localhost:8000/ui**. A one-line month summary ("December
+is peak season, and you're on track: 30% booked vs 24% last year by now"),
+last year's season by month, and a clean calendar: each day shows only its
+date, price, how booked it is (shade), a yellow line for holidays/events and
+an orange dot when the night is behind similar nights last year or nobody
+can check in. Click a day for the full story in the day card: booked vs
+similar nights last year, last year's final, season, event and minimum stay.
+The chat opens beside it ("Ask about this night" fills the question) with
+visible tool activity and approve/decline cards for pricing reviews. The
+**Deep** toggle switches to the deep agent (dark purple): suggestions become
 portfolio-sized missions, and you watch it plan and delegate to specialist
 subagents through delegation cards.
 
@@ -106,7 +111,10 @@ Interactive docs at http://127.0.0.1:8000/docs.
 | `GET /properties` | List properties |
 | `GET /properties/{id}/performance?start=&end=` | Occupancy, ADR, RevPAR, revenue (no LLM) |
 | `GET /properties/{id}/pace?start=&end=` | Booking pace vs 30/60/90 days ago (no LLM) |
-| `GET /properties/{id}/calendar?start=&end=` | Per-day rate, min-stay and nights sold (no LLM) |
+| `GET /properties/{id}/calendar?start=&end=` | Per-day rate, min-stay, nights sold, and how each night compares with similar nights last year (no LLM) |
+| `GET /properties/{id}/events?start=&end=` | Holidays and local events with their demand impact (no LLM) |
+| `GET /properties/{id}/benchmark?start=&end=` | Booked now vs the same window last year at the same lead time, holiday-aligned — the review's rule (no LLM) |
+| `GET /properties/{id}/seasons?year=` | Peak / high / shoulder / low per month from last year's occupancy (no LLM) |
 | `GET /properties/{id}/room-types?start=&end=` | Categories with units, from-rate and occupancy (no LLM) |
 | `POST /chat` | Talk to the agent; pass `conversation_id` to continue |
 | `POST /reviews` | Start a pricing review (may pause for approval) |
