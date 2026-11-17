@@ -80,10 +80,12 @@ multi-property tasks.
 ### Pricing review with human approval
 
 ```bash
-uv run python -m revenue_analyst.review mountain-cabins 2026-12-01 2027-01-01
+uv run python -m revenue_analyst.review mountain-cabins 2027-01-01 2027-02-01
 ```
 
-If the window is pacing below target, the workflow proposes a rate adjustment
+If the window is pacing behind the same window last year at the same lead
+time (364-day shift so weekdays align, 10% tolerance; a fixed 40% threshold
+only when there is no history), the workflow proposes a rate adjustment
 (bounded by a ±25% policy enforced in code) and pauses for your approval.
 Approving publishes the new rates through the `RatePublisher` port — a write
 port deliberately separate from data reading; the mock applies them in

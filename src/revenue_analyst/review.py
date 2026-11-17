@@ -1,8 +1,8 @@
 """Stage 5: run a pricing review with human approval in the terminal.
 
-    uv run python -m revenue_analyst.review mountain-cabins 2026-12-01 2027-01-01
+    uv run python -m revenue_analyst.review mountain-cabins 2027-01-01 2027-02-01
 
-If the window is pacing below target, the workflow proposes a rate adjustment
+If the window is pacing behind last year's pace at the same lead time, the workflow proposes a rate adjustment
 and PAUSES (LangGraph interrupt). You approve or reject; the paused state
 lives in the checkpointer, so the decision could just as well come hours
 later or from another process (see POST /reviews in the API).

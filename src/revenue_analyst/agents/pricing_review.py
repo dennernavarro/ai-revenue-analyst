@@ -14,8 +14,10 @@ graph drives, and the model fills one well-defined slot.
 Lessons baked in:
 
 - Custom state beyond messages: a TypedDict the nodes fill field by field.
-- The routing decision (healthy vs weak pace) is a threshold in Python, not a
-  judgment call delegated to the LLM.
+- The routing decision (healthy vs weak pace) is a rule in Python, not a
+  judgment call delegated to the LLM: on-the-books vs the same window last
+  year at the same lead time, so a quiet low season isn't mistaken for
+  weak pace (fixed threshold only when there is no history).
 - model.with_structured_output(RateProposal): the LLM's slot has a schema,
   not free text.
 - Hard business constraints live OUTSIDE the model: the clamp node caps any
@@ -38,13 +40,25 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.types import interrupt
 from pydantic import BaseModel, Field
 
-from revenue_analyst.analytics import booking_pace, daily_calendar, performance_summary
+from revenue_analyst.analytics import (
+    booking_pace,
+    daily_calendar,
+    on_the_books_nights,
+    performance_summary,
+)
 from revenue_analyst.llm import init_model
 from revenue_analyst.pms.provider import PMSProvider, RatePublisher
 
+LAST_YEAR_SHIFT = timedelta(days=364)
+"""52 weeks back, so weekdays align (a Saturday compares with a Saturday)."""
+
+PACE_TOLERANCE = 0.90
+"""A window (or day) is behind when its on-the-books is below 90% of what the
+same window had on the books at the same lead time last year."""
+
 HEALTHY_OTB_SHARE = 0.40
-"""On-the-books share of capacity above which no action is proposed.
-Deliberately naive — a real RMS compares against historical pace curves."""
+"""Fallback only, when the PMS has no last-year history for the window:
+on-the-books share of capacity above which no action is proposed."""
 
 MAX_ADJUSTMENT_PCT = 25.0
 """Business policy: no single adjustment beyond ±25%, enforced in code."""
@@ -72,10 +86,12 @@ class ReviewState(TypedDict, total=False):
 
 
 PROPOSE_PROMPT = """\
-You are a revenue analyst. A future stay window is pacing below target.
-Based ONLY on the analysis below (JSON), propose ONE rate adjustment within
-±{max_pct}% and justify it with those numbers. "same_window_last_year" uses a
-364-day shift so weekdays align.
+You are a revenue analyst. A future stay window is pacing behind its
+benchmark ("pace_benchmark": normally the same window last year at the same
+lead time). Based ONLY on the analysis below (JSON), propose ONE rate
+adjustment within ±{max_pct}% and justify it with those numbers.
+"same_window_last_year" (final results) and the benchmark both use a 364-day
+shift so weekdays align.
 
 Respect "rate_limits": published rates can never leave that band, so if
 current rates are already close to the floor, propose only the small cut that
@@ -83,7 +99,7 @@ still fits (or focus the rationale on non-price levers) — repeated deep
 discounts on already-discounted rates destroy revenue.
 
 Your adjustment will be applied ONLY to the dates in
-"day_targeting.target_days" (those pacing below the threshold); dates already
+"day_targeting.target_days" (those filled below "pace_benchmark.required_share"); dates already
 selling well keep their price, so reason about those slow dates.
 
 {analysis}
@@ -107,11 +123,22 @@ def build_pricing_review(
         prop = pms.get_property(state["property_id"])
         start, end = state["start"], state["end"]
 
-        pace = booking_pace(prop, pms.get_reservations(prop.id, start, end), as_of, start, end)
+        reservations = pms.get_reservations(prop.id, start, end)
+        pace = booking_pace(prop, reservations, as_of, start, end)
         rates = pms.get_daily_rates(prop.id, start, end)
-        ly_start, ly_end = start - timedelta(days=364), end - timedelta(days=364)
-        last_year = performance_summary(
-            prop, pms.get_reservations(prop.id, ly_start, ly_end), ly_start, ly_end
+        ly_start, ly_end = start - LAST_YEAR_SHIFT, end - LAST_YEAR_SHIFT
+        ly_as_of = as_of - LAST_YEAR_SHIFT
+        ly_reservations = pms.get_reservations(prop.id, ly_start, ly_end)
+        last_year = performance_summary(prop, ly_reservations, ly_start, ly_end)
+        has_history = bool(ly_reservations)
+
+        # Benchmark: what the same window had on the books at the same lead
+        # time last year (minus a tolerance) — seasonality comes for free.
+        capacity = pace.capacity_nights
+        otb_now = pace.pace[0].nights_on_the_books
+        otb_ly = on_the_books_nights(ly_reservations, ly_as_of, ly_start, ly_end)
+        required_share = (
+            otb_ly * PACE_TOLERANCE / capacity if has_history else HEALTHY_OTB_SHARE
         )
 
         avg_rate = round(mean(r.rate for r in rates), 2) if rates else 0.0
@@ -119,15 +146,17 @@ def build_pricing_review(
         # the property's hard floor — a deterministic fact, not a judgment.
         floor_reached = bool(rates) and avg_rate <= prop.min_rate * 1.02
 
-        # Day-level targeting: an adjustment only makes sense on dates that
-        # are pacing BELOW the threshold. Dates already selling well — or
+        # Day-level targeting: an adjustment only makes sense on dates filled
+        # BELOW the window's benchmark share. Dates selling above it — or
         # sold out — keep their price; discounting them burns revenue.
-        window_reservations = pms.get_reservations(prop.id, start, end)
-        calendar = daily_calendar(prop, window_reservations, rates, start, end)
+        # ponytail: one benchmark per window; a per-day last-year comparison is
+        # too sparse for small inventory (a 1-unit villa is 0 or 1 per day).
+        # Upgrade with multi-year history or holiday-aligned day matching.
+        calendar = daily_calendar(prop, reservations, rates, start, end)
         target_days = [
-            day.day.isoformat()
-            for day in calendar
-            if day.capacity and day.nights_sold / day.capacity < HEALTHY_OTB_SHARE
+            d.day.isoformat()
+            for d in calendar
+            if d.capacity and d.nights_sold / d.capacity < required_share
         ]
 
         return {
@@ -143,8 +172,16 @@ def build_pricing_review(
                 else None,
                 "rate_limits": {"min": prop.min_rate, "max": prop.max_rate},
                 "rate_floor_reached": floor_reached,
+                "pace_benchmark": {
+                    "basis": "last_year_same_lead_time" if has_history else "fixed_threshold",
+                    "on_the_books_share": round(otb_now / capacity, 4),
+                    "last_year_share_same_lead_time": (
+                        round(otb_ly / capacity, 4) if has_history else None
+                    ),
+                    "required_share": round(required_share, 4),
+                    "behind": otb_now / capacity < required_share,
+                },
                 "day_targeting": {
-                    "threshold": HEALTHY_OTB_SHARE,
                     "target_days": target_days,
                     "well_selling_days": len(calendar) - len(target_days),
                 },
@@ -156,8 +193,7 @@ def build_pricing_review(
         }
 
     def route(state: ReviewState) -> str:
-        current_share = state["analysis"]["pace"]["pace"][0]["share_of_capacity"]
-        if current_share >= HEALTHY_OTB_SHARE:
+        if not state["analysis"]["pace_benchmark"]["behind"]:
             return "summarize"
         if state["analysis"]["rate_floor_reached"]:
             # Weak pace but nothing left to discount: proposing another cut
@@ -165,16 +201,20 @@ def build_pricing_review(
             return "summarize"
         return "propose"
 
+    def _vs_benchmark(bench: dict) -> str:
+        now = f"{bench['on_the_books_share']:.0%} of capacity on the books"
+        if bench["basis"] == "fixed_threshold":
+            return f"{now} (threshold {HEALTHY_OTB_SHARE:.0%}; no last-year history)"
+        return (
+            f"{now} vs {bench['last_year_share_same_lead_time']:.0%} "
+            "at the same lead time last year"
+        )
+
     def summarize(state: ReviewState) -> dict:
-        current = state["analysis"]["pace"]["pace"][0]
+        bench = state["analysis"]["pace_benchmark"]
         window = f"{state['property_id']} {state['start']}→{state['end']}"
-        if current["share_of_capacity"] >= HEALTHY_OTB_SHARE:
-            return {
-                "outcome": (
-                    f"No action for {window}: {current['share_of_capacity']:.0%} of capacity "
-                    f"already on the books (threshold {HEALTHY_OTB_SHARE:.0%})."
-                )
-            }
+        if not bench["behind"]:
+            return {"outcome": f"No action for {window}: {_vs_benchmark(bench)}."}
         limits = state["analysis"]["rate_limits"]
         avg = state["analysis"]["published_rates"]["avg"]
         return {
@@ -208,8 +248,8 @@ def build_pricing_review(
                 "window": state["analysis"]["window"],
                 "target_days": state["analysis"]["day_targeting"]["target_days"],
                 "on_the_books": (
-                    f"{current['nights_on_the_books']} nights "
-                    f"({current['share_of_capacity']:.0%} of capacity)"
+                    f"{current['nights_on_the_books']} nights — "
+                    f"{_vs_benchmark(state['analysis']['pace_benchmark'])}"
                 ),
             }
         )
@@ -254,7 +294,7 @@ def build_pricing_review(
             return {
                 "outcome": (
                     f"APPROVED, nothing to publish: every date in {window} is already "
-                    f"selling at or above {HEALTHY_OTB_SHARE:.0%}.{note}"
+                    f"pacing at or ahead of its benchmark.{note}"
                 )
             }
         receipt = publisher.publish_rates(state["property_id"], new_rates)
