@@ -14,9 +14,12 @@ result IS the do-nothing outcome — a clean ground truth:
 
     actually behind = final occupancy < PACE_TOLERANCE × last year's final
 
-Both rules are scored on the same windows: the last-year benchmark the
-review uses, and the old fixed 40% threshold (the no-history fallback).
-No LLM involved — only the deterministic routing decision is replayed.
+Three rules are scored on the same windows: the event-aligned benchmark the
+review uses (last year's edition of the window's main event), the plain
+364-day benchmark, and the old fixed 40% threshold (the no-history fallback).
+The ground truth itself depends on what "last year" means, so the report
+scores every rule against both definitions. No LLM involved — only the
+deterministic routing decision is replayed.
 """
 
 from __future__ import annotations
@@ -27,13 +30,16 @@ from datetime import date, datetime, time, timedelta
 from revenue_analyst.agents.pricing_review import (
     LAST_YEAR_SHIFT,
     PACE_TOLERANCE,
+    last_year_shift,
     pace_benchmark,
 )
 from revenue_analyst.analytics import performance_summary
+from revenue_analyst.domain import Property, Reservation
 from revenue_analyst.pms.provider import PMSProvider
 
 LEAD_DAYS = (30, 60, 90)
-RULES = ("last_year", "fixed_40")
+RULES = ("event_aligned", "last_year", "fixed_40")
+TRUTHS = ("actual_behind", "actual_behind_aligned")
 
 
 def _months(first: date, last: date):
@@ -45,6 +51,15 @@ def _months(first: date, last: date):
             return
         yield start, end
         start = end
+
+
+def _last_year(
+    pms: PMSProvider, prop: Property, start: date, end: date, shift: timedelta
+) -> tuple[list[Reservation], float]:
+    """Last year's reservations and final occupancy for the window `shift` back."""
+    ly_start, ly_end = start - shift, end - shift
+    reservations = pms.get_reservations(prop.id, ly_start, ly_end)
+    return reservations, performance_summary(prop, reservations, ly_start, ly_end).occupancy
 
 
 def run_backtest(
@@ -59,16 +74,19 @@ def run_backtest(
     for prop in pms.list_properties():
         for start, end in _months(first, last):
             reservations = pms.get_reservations(prop.id, start, end)
-            ly_start, ly_end = start - LAST_YEAR_SHIFT, end - LAST_YEAR_SHIFT
-            ly_reservations = pms.get_reservations(prop.id, ly_start, ly_end)
             final = performance_summary(prop, reservations, start, end).occupancy
-            ly_final = performance_summary(prop, ly_reservations, ly_start, ly_end).occupancy
-            actual_behind = final < ly_final * PACE_TOLERANCE
+            events = pms.get_events(prop.id, start - timedelta(days=400), end)
+            shift, aligned_on = last_year_shift(events, start, end)
+            ly_reservations, ly_final = _last_year(pms, prop, start, end, LAST_YEAR_SHIFT)
+            al_reservations, al_final = _last_year(pms, prop, start, end, shift)
 
             for lead in leads:
                 decided_at = datetime.combine(start - timedelta(days=lead), time(12))
                 bench = pace_benchmark(
                     prop, reservations, ly_reservations, decided_at, start, end
+                )
+                aligned = pace_benchmark(
+                    prop, reservations, al_reservations, decided_at, start, end, shift
                 )
                 fixed = pace_benchmark(prop, reservations, [], decided_at, start, end)
                 rows.append(
@@ -80,7 +98,11 @@ def run_backtest(
                         "ly_otb_share": bench["last_year_share_same_lead_time"],
                         "final_occupancy": round(final, 4),
                         "ly_final_occupancy": round(ly_final, 4),
-                        "actual_behind": actual_behind,
+                        "shift_days": shift.days,
+                        "aligned_on": aligned_on,
+                        "actual_behind": final < ly_final * PACE_TOLERANCE,
+                        "actual_behind_aligned": final < al_final * PACE_TOLERANCE,
+                        "event_aligned": aligned["behind"],
                         "last_year": bench["behind"],
                         "fixed_40": fixed["behind"],
                     }
@@ -88,13 +110,13 @@ def run_backtest(
     return rows
 
 
-def score(rows: list[dict], rule: str) -> dict:
+def score(rows: list[dict], rule: str, truth: str = "actual_behind") -> dict:
     """Confusion counts for one rule. "Positive" = flagged behind (would
     trigger a proposal). Precision: of the flags, how many were right.
     Recall: of the windows that really ended behind, how many were caught."""
-    tp = sum(r[rule] and r["actual_behind"] for r in rows)
-    fp = sum(r[rule] and not r["actual_behind"] for r in rows)
-    fn = sum(not r[rule] and r["actual_behind"] for r in rows)
+    tp = sum(r[rule] and r[truth] for r in rows)
+    fp = sum(r[rule] and not r[truth] for r in rows)
+    fn = sum(not r[rule] and r[truth] for r in rows)
     tn = len(rows) - tp - fp - fn
     return {
         "n": len(rows),
@@ -115,33 +137,40 @@ def _pct(x: float | None) -> str:
 def report(rows: list[dict], verbose: bool = False) -> str:
     lines = []
     if verbose:
-        lines.append("property          month    lead  otb   LY-otb  final  LY-final  "
-                     "actual   last_year  fixed_40")
+        lines.append("property          month    lead  shift  otb   LY-otb  final  LY-final  "
+                     "actual   aligned  last_year  fixed_40")
         for r in rows:
             ly_otb = "  n/a" if r["ly_otb_share"] is None else f"{r['ly_otb_share']:5.0%}"
             lines.append(
-                f"{r['property_id']:17} {r['month']}  {r['lead_days']:3}d "
+                f"{r['property_id']:17} {r['month']}  {r['lead_days']:3}d  {r['shift_days']:4}d "
                 f"{r['otb_share']:5.0%} {ly_otb}  {r['final_occupancy']:5.0%}  "
                 f"{r['ly_final_occupancy']:5.0%}     "
                 f"{'behind' if r['actual_behind'] else 'ok':7}  "
+                f"{'flag' if r['event_aligned'] else '-':7}  "
                 f"{'flag' if r['last_year'] else '-':9}  {'flag' if r['fixed_40'] else '-'}"
             )
         lines.append("")
 
-    behind = sum(r["actual_behind"] for r in rows)
-    lines.append(f"{len(rows)} decisions, {behind} windows actually ended behind last year")
-    lines.append("")
-    lines.append("rule        lead   flags  precision  recall  accuracy   (tp/fp/fn/tn)")
-    for rule in RULES:
-        for lead in (*sorted({r["lead_days"] for r in rows}), None):
-            subset = [r for r in rows if lead is None or r["lead_days"] == lead]
-            s = score(subset, rule)
-            label = "all" if lead is None else f"{lead}d"
-            lines.append(
-                f"{rule:10}  {label:>4}  {s['tp'] + s['fp']:5}  {_pct(s['precision']):>9}  "
-                f"{_pct(s['recall']):>6}  {_pct(s['accuracy']):>8}   "
-                f"({s['tp']}/{s['fp']}/{s['fn']}/{s['tn']})"
-            )
+    shifted = sum(r["shift_days"] != LAST_YEAR_SHIFT.days for r in rows) // len(LEAD_DAYS)
+    lines.append(f"{len(rows)} decisions; {shifted} windows compare with a shifted last year")
+    for truth, label in (
+        ("actual_behind", "same window 364 days earlier"),
+        ("actual_behind_aligned", "event-aligned window"),
+    ):
+        behind = sum(r[truth] for r in rows)
+        truth_line = f"Truth: final occupancy < {PACE_TOLERANCE:.0%} of the {label}"
+        lines += ["", f"{truth_line} ({behind} windows behind)"]
+        lines.append("rule           lead  flags  precision  recall  accuracy   (tp/fp/fn/tn)")
+        for rule in RULES:
+            for lead in (*sorted({r["lead_days"] for r in rows}), None):
+                subset = [r for r in rows if lead is None or r["lead_days"] == lead]
+                s = score(subset, rule, truth)
+                when = "all" if lead is None else f"{lead}d"
+                lines.append(
+                    f"{rule:13}  {when:>4}  {s['tp'] + s['fp']:5}  {_pct(s['precision']):>9}  "
+                    f"{_pct(s['recall']):>6}  {_pct(s['accuracy']):>8}   "
+                    f"({s['tp']}/{s['fp']}/{s['fn']}/{s['tn']})"
+                )
     return "\n".join(lines)
 
 

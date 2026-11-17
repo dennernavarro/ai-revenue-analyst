@@ -102,3 +102,14 @@ def test_rates_cover_every_day_exactly_once(provider):
         rates = provider.get_daily_rates(prop.id, *WINDOW)
         assert sorted(r.day for r in rates) == expected_days
         assert all(r.rate > 0 for r in rates)
+
+
+def test_events_overlap_the_window_and_are_sorted(provider):
+    window = (date(2026, 11, 1), date(2027, 1, 1))
+    for prop in provider.list_properties():
+        events = provider.get_events(prop.id, *window)
+        assert events == sorted(events, key=lambda e: (e.start, e.name))
+        for e in events:
+            assert e.property_id == prop.id and e.start < e.end
+            assert e.start < window[1] and e.end > window[0]
+            assert e.impact > 0
