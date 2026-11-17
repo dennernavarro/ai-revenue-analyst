@@ -80,10 +80,12 @@ multi-property tasks.
 ### Pricing review with human approval
 
 ```bash
-uv run python -m revenue_analyst.review mountain-cabins 2026-12-01 2027-01-01
+uv run python -m revenue_analyst.review mountain-cabins 2027-01-01 2027-02-01
 ```
 
-If the window is pacing below target, the workflow proposes a rate adjustment
+If the window is pacing behind the same window last year at the same lead
+time (364-day shift so weekdays align, 10% tolerance; a fixed 40% threshold
+only when there is no history), the workflow proposes a rate adjustment
 (bounded by a ±25% policy enforced in code) and pauses for your approval.
 Approving publishes the new rates through the `RatePublisher` port — a write
 port deliberately separate from data reading; the mock applies them in
@@ -193,6 +195,11 @@ uv run python -m revenue_analyst.evals --langsmith  # also log a LangSmith exper
 This project was built incrementally as a learning journey through modern
 agent tooling — the stage-by-stage write-ups, including what hurt and what
 each framework actually buys you, live in [docs/notes/](docs/notes/).
+
+Project docs: [spec](docs/SPEC.md), [status](docs/STATUS.md),
+[plan](docs/PLAN.md), [process](docs/PROCESS.md),
+[code standards](docs/CODE_STANDARDS.md), [tech stack](docs/TECH_STACK.md)
+and [brand](docs/BRAND.md).
 
 ## License
 

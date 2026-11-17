@@ -14,9 +14,17 @@ from revenue_analyst.pms.mock import MockPMS
 DATA_DIR = Path(__file__).resolve().parents[1] / "data"
 CONFIG = {"configurable": {"thread_id": "review-test"}}
 
-# December 2026 at Mountain Cabins paces ~21% as of Nov 1 → below threshold.
-WEAK_WINDOW = {"property_id": "mountain-cabins", "start": date(2026, 12, 1), "end": date(2027, 1, 1)}
-# November 2026 paces ~45% → healthy.
+# January 2027 at Mountain Cabins: 3% on the books vs 8% at the same lead
+# time last year → behind.
+WEAK_WINDOW = {"property_id": "mountain-cabins", "start": date(2027, 1, 1), "end": date(2027, 2, 1)}
+# December 2026: only 20% on the books — below the old fixed 40% — but ahead
+# of last year's 17% at the same lead time → no action.
+SEASONAL_WINDOW = {
+    "property_id": "mountain-cabins",
+    "start": date(2026, 12, 1),
+    "end": date(2027, 1, 1),
+}
+# November 2026: 44% vs 38% last year → healthy.
 HEALTHY_WINDOW = {
     "property_id": "mountain-cabins",
     "start": date(2026, 11, 1),
@@ -42,10 +50,37 @@ def test_healthy_pace_short_circuits_without_the_llm(scripted_model):
     assert "__interrupt__" not in result
 
 
+def test_pace_is_judged_against_last_year_not_a_fixed_threshold(scripted_model):
+    # Below 40% yet ahead of last year: the LLM must not be reached.
+    result = _workflow(scripted_model).invoke(SEASONAL_WINDOW, CONFIG)
+    assert "__interrupt__" not in result
+    assert "No action" in result["outcome"]
+    assert "same lead time last year" in result["outcome"]
+
+
+def test_without_history_falls_back_to_the_fixed_threshold(scripted_model):
+    class NoHistoryPMS(MockPMS):
+        def get_reservations(self, property_id, start, end):
+            if end <= AS_OF.date():
+                return []
+            return super().get_reservations(property_id, start, end)
+
+    proposal = RateProposal(adjustment_pct=-5, rationale="slow", expected_effect="pickup")
+    workflow = build_pricing_review(
+        NoHistoryPMS(DATA_DIR),
+        AS_OF,
+        model=scripted_model(structured=[proposal]),
+        checkpointer=InMemorySaver(),
+    )
+    # Same December window: with no history, 20% < 40% → proposal.
+    payload = workflow.invoke(SEASONAL_WINDOW, CONFIG)["__interrupt__"][0].value
+    assert "no last-year history" in payload["on_the_books"]
+
+
 def test_weak_pace_pauses_then_records_approval(scripted_model):
     proposal = RateProposal(
         adjustment_pct=-12,
-        rationale="Only 21% on the books vs 40% threshold.",
+        rationale="3% on the books vs 8% last year.",
         expected_effect="Higher pickup at slightly lower ADR.",
     )
     workflow = _workflow(scripted_model, structured=[proposal])
@@ -68,9 +103,6 @@ def test_rejection_is_recorded(scripted_model):
 
 
 def test_approval_publishes_only_to_slow_pacing_days(scripted_model):
-    from revenue_analyst.agents.pricing_review import HEALTHY_OTB_SHARE
-    from revenue_analyst.analytics import daily_calendar
-
     pms = MockPMS(DATA_DIR)
     proposal = RateProposal(adjustment_pct=-10, rationale="slow", expected_effect="pickup")
     workflow = build_pricing_review(
@@ -81,23 +113,15 @@ def test_approval_publishes_only_to_slow_pacing_days(scripted_model):
         publisher=pms,
     )
     window = (WEAK_WINDOW["start"], WEAK_WINDOW["end"])
-    prop = pms.get_property("mountain-cabins")
-    calendar = daily_calendar(
-        prop,
-        pms.get_reservations(prop.id, *window),
-        pms.get_daily_rates(prop.id, *window),
-        *window,
-    )
-    expected = {
-        d.day: (
-            float(round(d.rate * 0.9))
-            if d.nights_sold / d.capacity < HEALTHY_OTB_SHARE
-            else d.rate
-        )
-        for d in calendar
-    }
+    before = {r.day: r.rate for r in pms.get_daily_rates("mountain-cabins", *window)}
 
-    workflow.invoke(WEAK_WINDOW, CONFIG)
+    paused = workflow.invoke(WEAK_WINDOW, CONFIG)
+    targets = {date.fromisoformat(d) for d in paused["__interrupt__"][0].value["target_days"]}
+    # Jan 16–19 already have a cabin sold (25%), above the ~7% benchmark.
+    assert date(2027, 1, 17) not in targets and date(2027, 1, 5) in targets
+    expected = {
+        day: float(round(rate * 0.9)) if day in targets else rate for day, rate in before.items()
+    }
     resumed = workflow.invoke(Command(resume={"approved": True, "note": ""}), CONFIG)
 
     assert resumed["outcome"].startswith("APPROVED & PUBLISHED: -10.0%")
