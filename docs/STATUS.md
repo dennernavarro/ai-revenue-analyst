@@ -2,7 +2,7 @@
 
 _Last updated: 2026-11-17_
 
-**Version:** 1.1.0 (`main` @ `23c8770`) + three stacked, unmerged PRs below.
+**Version:** 1.1.0 + Phase 0 and the backtest merged into `main`; Phase 2 events in review.
 **Phase:** 1 and 2 in progress; calendar redesign and Auto-pilot designed (see PLAN.md).
 
 ## Working
@@ -16,15 +16,17 @@ _Last updated: 2026-11-17_
 - Verified live with OpenRouter (`gpt-4o-mini`): chat answers match the KPI
   tiles; reviews route as expected on the current data.
 
-## Unmerged work (stacked: each PR builds on the previous)
+## Merged into `main`
 
-1. **PR #2 — Phase 0** (`feat/season-aware-pricing-review`): the review
-   benchmarks against last year's on-the-books at the same lead time (90%
-   tolerance); fixed 40% only without history. Project docs in `docs/`.
-2. **PR #3 — Phase 1 backtest** (`feat/backtest`):
-   `python -m revenue_analyst.backtest`; the routing rule is one pure
-   function shared by review and backtest.
-3. **Phase 2 events** (`feat/events-calendar`): holiday/event calendar,
+- **PR #2 — Phase 0**: the review benchmarks against last year's
+  on-the-books at the same lead time (90% tolerance); fixed 40% only without
+  history. Project docs in `docs/`.
+- **PR #3 — Phase 1 backtest**: `python -m revenue_analyst.backtest`; the
+  routing rule is one pure function shared by review and backtest.
+
+## In review
+
+- **Phase 2 events** (`feat/events-calendar`): holiday/event calendar,
    simulator effects, `PMSProvider.get_events`, holiday-aligned last-year
    comparison (Easter 2027 ↔ Easter 2026 = 357 days), `event_aligned`
    backtest rule. Mock data regenerated — test fixtures moved accordingly.
@@ -85,6 +87,6 @@ Before the events data (old baseline): fixed 40% 34% accuracy, last year 62%
 
 ## Next
 
-Merge PRs in order (#2 → #3 → Phase 2). Finish Phase 2: events tool and
+Merge the Phase 2 events PR. Finish Phase 2: events tool and
 endpoint, calendar UI per the approved design. Then the night-level backtest,
 which gates Auto-pilot (Phase 4).
