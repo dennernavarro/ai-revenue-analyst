@@ -46,7 +46,7 @@ from revenue_analyst.analytics import (
     on_the_books_nights,
     performance_summary,
 )
-from revenue_analyst.domain import Event, Property, Reservation
+from revenue_analyst.domain import Event, Property, Reservation, ReservationStatus
 from revenue_analyst.llm import init_model
 from revenue_analyst.pms.provider import PMSProvider, RatePublisher
 
@@ -63,6 +63,109 @@ on-the-books share of capacity above which no action is proposed."""
 
 MAX_ADJUSTMENT_PCT = 25.0
 """Business policy: no single adjustment beyond ±25%, enforced in code."""
+
+PEER_WINDOW_DAYS = 7
+"""Night-level check: compare with last year's nights of the same kind within
+±7 days — pooling gives enough signal even for a one-unit villa."""
+
+MIN_PEER_SHARE = 0.25
+"""Below this (similar nights last year had < 25% booked by now) a night is
+"too early to tell" rather than behind."""
+
+
+class NightOutlook(BaseModel):
+    """One night vs similar nights last year — information only; nothing acts
+    on it yet (Auto-pilot will, once the night-level backtest backs it)."""
+
+    day: date
+    kind: str
+    """"event", "weekend" (Fri/Sat nights) or "weekday"."""
+    booked_now: int
+    peer_booked: float | None
+    """Average nights on the books at this lead time on similar nights last
+    year (same kind, ±PEER_WINDOW_DAYS); None without history."""
+    last_year_final: int
+    """Confirmed nights sold on the same weekday last year (`shift` back)."""
+    status: str
+    """"sold_out", "behind", "on_track", "too_early" or "no_history"."""
+    arrival_blocked: bool
+    """True when nobody can check in: the night has a free unit, but its
+    minimum stay runs into a sold-out night."""
+
+
+def _night_kind(day: date, events: list[Event]) -> str:
+    if any(e.start <= day < e.end for e in events):
+        return "event"
+    return "weekend" if day.weekday() in (4, 5) else "weekday"
+
+
+def _sold(reservations: list[Reservation], night: date) -> int:
+    return sum(
+        1 for r in reservations
+        if r.status is ReservationStatus.CONFIRMED and r.check_in <= night < r.check_out
+    )
+
+
+def night_outlook(
+    prop: Property,
+    reservations: list[Reservation],
+    ly_reservations: list[Reservation],
+    min_stays: dict[date, int],
+    events: list[Event],
+    as_of: datetime,
+    start: date,
+    end: date,
+    shift: timedelta = LAST_YEAR_SHIFT,
+) -> list[NightOutlook]:
+    """Per-night outlook for [start, end).
+
+    `reservations` must cover the window plus the longest minimum stay after
+    it; `ly_reservations` and `events` must cover the window `shift` back,
+    ±PEER_WINDOW_DAYS.
+    """
+    units = prop.unit_count
+    ly_as_of = as_of - shift
+    one = timedelta(days=1)
+
+    def booked(night: date) -> int:
+        return on_the_books_nights(reservations, as_of, night, night + one)
+
+    nights = []
+    day = start
+    while day < end:
+        kind = _night_kind(day, events)
+        now = booked(day)
+        peers = [
+            on_the_books_nights(ly_reservations, ly_as_of, q, q + one)
+            for q in (day - shift + timedelta(days=o)
+                      for o in range(-PEER_WINDOW_DAYS, PEER_WINDOW_DAYS + 1))
+            if _night_kind(q, events) == kind
+        ]
+        peer = sum(peers) / len(peers) if ly_reservations and peers else None
+        if now >= units:
+            status = "sold_out"
+        elif peer is None:
+            status = "no_history"
+        elif peer < MIN_PEER_SHARE * units:
+            status = "too_early"
+        elif now < PACE_TOLERANCE * peer:
+            status = "behind"
+        else:
+            status = "on_track"
+        stay = min_stays.get(day, 1)
+        blocked = now < units and any(
+            booked(day + timedelta(days=k)) >= units for k in range(1, stay)
+        )
+        nights.append(
+            NightOutlook(
+                day=day, kind=kind, booked_now=now,
+                peer_booked=round(peer, 2) if peer is not None else None,
+                last_year_final=_sold(ly_reservations, day - shift),
+                status=status, arrival_blocked=blocked,
+            )
+        )
+        day += one
+    return nights
 
 
 def last_year_shift(events: list[Event], start: date, end: date) -> tuple[timedelta, str | None]:

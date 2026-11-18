@@ -17,45 +17,58 @@ Three promises, in this order:
    from the model's head.
 2. **The human decides.** Rate changes are proposals until approved.
 3. **Plain language.** Occupancy, ADR, RevPAR and pace explained like a
-   colleague would, not like a dashboard.
+   friend who knows the numbers, not like a dashboard.
 
 ## Voice
 
-- Lead with the answer, then the supporting numbers (this is also the agent's
-  system-prompt rule).
-- Concrete over clever: "20% on the books vs 17% at the same lead time last
-  year", not "pacing looks strong".
-- Calm and factual. No hype, no exclamation marks, no emoji in product copy.
-- Say what we don't know: on-the-books is not a forecast, and we say so.
-- Percentages for occupancy and shares; currency with the symbol (`$317`),
-  no decimals unless they matter (`$317.44` ADR is fine).
+Simple, direct and warm — talk *to* the host. Inspired by friendly consumer
+fintech, never imitating any company's copy.
+
+- Second person, verdict first: "You're ahead", "You're behind", "Sold out.
+  Nothing to do here."
+- Then the numbers that back it, in one line: "30% booked vs 24% last year by
+  now."
+- Everyday words over jargon: "booked so far", "last year by now", "similar
+  nights" — keep ADR/RevPAR only where the user expects them.
+- Say what we don't know: "Too early to tell" beats a guess. On-the-books is
+  not a forecast.
+- Calm, no hype, no exclamation marks, no emoji in product copy.
+- Percentages for occupancy and shares; whole dollars in the UI (`$655`).
 
 ## Visual identity
 
-Light, quiet, data-first. Colour marks meaning, not decoration.
+Clean and light, purple-led. **Show less, lose nothing**: the calendar shows
+only what needs a glance; everything else is one click away in the day card.
 
 | Token | Value | Use |
 |---|---|---|
-| `--accent` | `#0e6b53` (deep green) | Primary actions, selected state, "sold" in the calendar |
-| `--accent-soft` | `rgba(14,107,83,.1)` | Selected backgrounds, chips |
-| `--ink` | `#20242a` | Body text |
-| `--ink-2` / `--ink-3` | `#566069` / `#6b7378` | Secondary / tertiary text |
-| `--line` / `--line-soft` | `#e4e7e5` / `#eef0ee` | Borders, dividers |
-| `--bg` | `#f4f5f4` | App background (cards are white) |
-| `--warn` | `#9a3412` | Weak pace, problems needing attention |
-| Deep mode accent | `#9c5f0a` on `#fffdf9` | The whole chat panel re-themes amber when the deep agent is on |
+| `--accent` | `#6b1fc4` | Brand, primary buttons, selection, current month |
+| `--accent-strong` | `#4b148f` | Sold-out nights, "good" insight |
+| `--accent-soft` | `#f6f0fd` | Selected/toggled backgrounds |
+| `--ink` / `--ink-2` / `--ink-3` | `#1f1430` / `#4e4560` / `#6a627a` | Text |
+| `--bg` / `--card` | `#faf9fc` / `#ffffff` | Page / cards |
+| `--fill-0…4` | white → `#f6f0fd` → `#ebe0fa` → `#dfccf6` → `#4b148f` | How booked a night is |
+| `--event` | `#f2b705` | Holiday or event (line on the cell, note in the card) |
+| `--attention` | `#c2410c` (text `#7a2a00`) | Behind / nobody can check in |
+| `--good-ink` | `#0a4a8c` | On track |
+| Deep mode | `#2a1650` | The chat header turns deep ink purple when the deep agent is on |
 
 The source of truth is `frontend/src/styles.css`; change tokens there, then
 here.
 
-**Typography:** Inter 400/500/600 for UI and body (14px base); Space Grotesk
-500/600 for headings and KPI figures.
+**Typography:** Plus Jakarta Sans 400–800, 14px base; 800 for headings,
+prices and key numbers.
 
-**Mode signalling:** Deep mode must always look different (amber) from the
-standard chat (green) so users know a slower, delegating agent is working.
+**Shape:** rounded — cards 24px, cells 14px, buttons and pills fully round.
+Touch targets ≥ 44px.
 
-## Don'ts
+## Rules
 
-- No stock "AI" imagery (robots, sparkles, brains).
-- No red/green-only signalling — pair colour with text ("behind", "ahead").
+- Purple marks the brand and selection; yellow means event; orange means
+  attention; blue means on track. Colours that must be told apart also
+  differ in lightness and always come with words (or an aria-label).
+- Deep mode must always look different from the standard chat.
 - Don't show a number in the UI that the API didn't return.
+- No stock "AI" imagery (robots, sparkles, brains), no gradient washes.
+- Use our own name, mark and palette — never another company's logo, font or
+  exact identity.

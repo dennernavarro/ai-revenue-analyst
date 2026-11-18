@@ -52,6 +52,9 @@ export const api = {
   calendar: (id, start, end) => get(`/properties/${id}/calendar?start=${start}&end=${end}`),
   roomTypes: (id, start, end) =>
     get(`/properties/${id}/room-types?start=${start}&end=${end}`),
+  events: (id, start, end) => get(`/properties/${id}/events?start=${start}&end=${end}`),
+  benchmark: (id, start, end) => get(`/properties/${id}/benchmark?start=${start}&end=${end}`),
+  seasons: (id) => get(`/properties/${id}/seasons`),
   chat: (message, conversationId) =>
     post('/chat', { message, conversation_id: conversationId }),
   startReview: (propertyId, start, end) =>

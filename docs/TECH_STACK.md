@@ -26,7 +26,7 @@ Default model: `openrouter:openai/gpt-4o-mini`.
 | React + React DOM | ^18.3.1 |
 | Vite + @vitejs/plugin-react | ^5.4.11 / ^4.3.4 |
 | react-markdown + remark-gfm | ^10.1.0 / ^4.0.1 (chat replies) |
-| Fonts | Inter, Space Grotesk (Google Fonts) |
+| Font | Plus Jakarta Sans (Google Fonts) |
 
 Built to `frontend/dist`, served by the API at `/ui`. Dev server: Vite on
 5173 with a proxy to the API.

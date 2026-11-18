@@ -230,3 +230,33 @@ def on_the_books_nights(
             continue
         total += _overlap_nights(r, start, end)
     return total
+
+
+class SeasonMonth(BaseModel):
+    month: int
+    """1..12."""
+    occupancy: float
+    index: float
+    """This month's occupancy / the year's average monthly occupancy."""
+    level: str
+    """"peak" (index ≥ 1.25), "high" (≥ 1.0), "shoulder" (≥ 0.8) or "low"."""
+
+
+def season_profile(prop: Property, reservations: list[Reservation], year: int) -> list[SeasonMonth]:
+    """How busy each month of `year` was, relative to that year's average —
+    derived from realized bookings, so it works for any PMS (no config)."""
+    occ = []
+    for m in range(1, 13):
+        start = date(year, m, 1)
+        end = date(year + m // 12, m % 12 + 1, 1)
+        occ.append(performance_summary(prop, reservations, start, end).occupancy)
+    avg = sum(occ) / 12
+    months = []
+    for m, o in enumerate(occ, start=1):
+        index = o / avg if avg else 0.0
+        level = (
+            "peak" if index >= 1.25 else "high" if index >= 1.0
+            else "shoulder" if index >= 0.8 else "low"
+        )
+        months.append(SeasonMonth(month=m, occupancy=round(o, 4), index=round(index, 2), level=level))
+    return months
