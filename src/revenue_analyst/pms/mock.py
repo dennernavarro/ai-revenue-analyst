@@ -6,7 +6,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from revenue_analyst.dataset import PropertyDataset
-from revenue_analyst.domain import DailyRate, Property, RatePublication, Reservation
+from revenue_analyst.domain import DailyRate, Event, Property, RatePublication, Reservation
 from revenue_analyst.pms.provider import PropertyNotFoundError
 
 
@@ -49,6 +49,11 @@ class MockPMS:
             dr.model_copy()
             for dr in self._dataset(property_id).daily_rates
             if start <= dr.day < end
+        ]
+
+    def get_events(self, property_id: str, start: date, end: date) -> list[Event]:
+        return [
+            e for e in self._dataset(property_id).events if e.start < end and e.end > start
         ]
 
     # --- RatePublisher contract (the separate WRITE port) ---------------------

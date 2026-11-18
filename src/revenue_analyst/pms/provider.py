@@ -14,7 +14,7 @@ from __future__ import annotations
 from datetime import date
 from typing import Protocol, runtime_checkable
 
-from revenue_analyst.domain import DailyRate, Property, RatePublication, Reservation
+from revenue_analyst.domain import DailyRate, Event, Property, RatePublication, Reservation
 
 
 class PropertyNotFoundError(KeyError):
@@ -50,4 +50,10 @@ class PMSProvider(Protocol):
 
     def get_daily_rates(self, property_id: str, start: date, end: date) -> list[DailyRate]:
         """Published nightly rates, one per day, for days in [start, end)."""
+        ...
+
+    def get_events(self, property_id: str, start: date, end: date) -> list[Event]:
+        """Holidays and local events with at least one night in [start, end),
+        sorted by start. Return [] when no calendar is known — every feature
+        degrades to the plain 364-day comparison."""
         ...

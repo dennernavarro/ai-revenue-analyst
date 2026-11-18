@@ -7,29 +7,36 @@ from pathlib import Path
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.types import Command
 
-from revenue_analyst.agents.pricing_review import RateProposal, build_pricing_review
+from revenue_analyst.agents.pricing_review import (
+    LAST_YEAR_SHIFT,
+    RateProposal,
+    build_pricing_review,
+)
 from revenue_analyst.datagen import AS_OF
 from revenue_analyst.pms.mock import MockPMS
 
 DATA_DIR = Path(__file__).resolve().parents[1] / "data"
 CONFIG = {"configurable": {"thread_id": "review-test"}}
 
-# January 2027 at Mountain Cabins: 3% on the books vs 8% at the same lead
+# March 2027 at Mountain Cabins: 2% on the books vs 7% at the same lead
 # time last year → behind.
-WEAK_WINDOW = {"property_id": "mountain-cabins", "start": date(2027, 1, 1), "end": date(2027, 2, 1)}
-# December 2026: only 20% on the books — below the old fixed 40% — but ahead
-# of last year's 17% at the same lead time → no action.
+WEAK_WINDOW = {"property_id": "mountain-cabins", "start": date(2027, 3, 1), "end": date(2027, 4, 1)}
+# December 2026: 30% on the books — below the old fixed 40% — but ahead of
+# last year's 24% at the same lead time → no action.
 SEASONAL_WINDOW = {
     "property_id": "mountain-cabins",
     "start": date(2026, 12, 1),
     "end": date(2027, 1, 1),
 }
-# November 2026: 44% vs 38% last year → healthy.
+# Seaside Villa December 2026: 52% vs 35% last year → healthy.
 HEALTHY_WINDOW = {
-    "property_id": "mountain-cabins",
-    "start": date(2026, 11, 1),
-    "end": date(2026, 12, 1),
+    "property_id": "seaside-villa",
+    "start": date(2026, 12, 1),
+    "end": date(2027, 1, 1),
 }
+# Seaside Villa March 2027 holds Easter 2027 (Mar 28): compared with Easter
+# 2026 (Apr 5), 357 days back, not the plain 364. 3% vs 30% → behind.
+EASTER_WINDOW = {"property_id": "seaside-villa", "start": date(2027, 3, 1), "end": date(2027, 4, 1)}
 
 
 def _workflow(scripted_model, structured=()):
@@ -80,7 +87,7 @@ def test_without_history_falls_back_to_the_fixed_threshold(scripted_model):
 def test_weak_pace_pauses_then_records_approval(scripted_model):
     proposal = RateProposal(
         adjustment_pct=-12,
-        rationale="3% on the books vs 8% last year.",
+        rationale="2% on the books vs 7% last year.",
         expected_effect="Higher pickup at slightly lower ADR.",
     )
     workflow = _workflow(scripted_model, structured=[proposal])
@@ -117,8 +124,8 @@ def test_approval_publishes_only_to_slow_pacing_days(scripted_model):
 
     paused = workflow.invoke(WEAK_WINDOW, CONFIG)
     targets = {date.fromisoformat(d) for d in paused["__interrupt__"][0].value["target_days"]}
-    # Jan 16–19 already have a cabin sold (25%), above the ~7% benchmark.
-    assert date(2027, 1, 17) not in targets and date(2027, 1, 5) in targets
+    # Mar 19–20 already have a cabin sold (25%), above the ~6% benchmark.
+    assert date(2027, 3, 19) not in targets and date(2027, 3, 5) in targets
     expected = {
         day: float(round(rate * 0.9)) if day in targets else rate for day, rate in before.items()
     }
@@ -149,10 +156,10 @@ def test_rejection_leaves_rates_untouched(scripted_model):
 def test_published_rates_never_go_below_the_property_floor(scripted_model):
     """Seaside Villa: floor $192 (base 320 × 0.6). A -25% cut would take the
     $224 weekdays to $168 — publication must stop at the floor, while the
-    $280 weekends land at $210 above it. The sold-out nights (Dec 1–3, 1/1
-    sold) must keep their $224: never discount a day that is selling."""
+    $280 weekends land at $210 above it. The sold-out night (Mar 13, 1/1
+    sold) must keep its $336: never discount a day that is selling."""
     pms = MockPMS(DATA_DIR)
-    window = {"property_id": "seaside-villa", "start": date(2026, 12, 1), "end": date(2027, 1, 1)}
+    window = EASTER_WINDOW
     proposal = RateProposal(adjustment_pct=-25, rationale="deep cut", expected_effect="volume")
     workflow = build_pricing_review(
         pms, AS_OF, model=scripted_model(structured=[proposal]),
@@ -160,8 +167,8 @@ def test_published_rates_never_go_below_the_property_floor(scripted_model):
     )
     paused = workflow.invoke(window, CONFIG)
     target_days = paused["__interrupt__"][0].value["target_days"]
-    assert "2026-12-01" not in target_days  # sold out → not a target
-    assert "2026-12-07" in target_days
+    assert "2027-03-13" not in target_days  # sold out → not a target
+    assert "2027-03-01" in target_days
 
     resumed = workflow.invoke(Command(resume={"approved": True, "note": ""}), CONFIG)
 
@@ -171,9 +178,9 @@ def test_published_rates_never_go_below_the_property_floor(scripted_model):
         r.day.isoformat(): r.rate
         for r in pms.get_daily_rates("seaside-villa", window["start"], window["end"])
     }
-    assert rates["2026-12-01"] == 224.0  # sold out: untouched
-    assert rates["2026-12-07"] == 192.0  # slow weekday: floor, not 168
-    assert rates["2026-12-04"] == 210.0  # slow weekend: 280 × 0.75
+    assert rates["2027-03-13"] == 336.0  # sold out: untouched
+    assert rates["2027-03-01"] == 192.0  # slow weekday: floor, not 168
+    assert rates["2027-03-05"] == 210.0  # slow weekend: 280 × 0.75
 
 
 def test_exhausted_discounts_skip_the_llm_entirely(scripted_model):
@@ -181,7 +188,7 @@ def test_exhausted_discounts_skip_the_llm_entirely(scripted_model):
     discount' outcome; any LLM call would make the stub raise StopIteration."""
     pms = MockPMS(DATA_DIR)
     prop = pms.get_property("seaside-villa")
-    start, end = date(2026, 12, 1), date(2027, 1, 1)
+    start, end = EASTER_WINDOW["start"], EASTER_WINDOW["end"]
     floored = [
         r.model_copy(update={"rate": float(prop.min_rate)})
         for r in pms.get_daily_rates("seaside-villa", start, end)
@@ -205,3 +212,30 @@ def test_out_of_bounds_proposal_is_clamped_by_policy(scripted_model):
     clamped = result["__interrupt__"][0].value["proposal"]
     assert clamped["adjustment_pct"] == -25.0
     assert "clamped" in clamped["rationale"]
+
+
+def test_window_with_a_moving_holiday_compares_with_its_last_edition(scripted_model):
+    proposal = RateProposal(adjustment_pct=-5, rationale="slow", expected_effect="pickup")
+    workflow = _workflow(scripted_model, structured=[proposal])
+    workflow.invoke(EASTER_WINDOW, CONFIG)
+    analysis = workflow.get_state(CONFIG).values["analysis"]
+    assert analysis["last_year_alignment"] == {"shift_days": 357, "aligned_on": "Easter weekend"}
+    assert {e["name"] for e in analysis["events"]} == {"Spring break", "Easter weekend"}
+
+
+def test_last_year_shift_rounds_to_whole_weeks():
+    from revenue_analyst.agents.pricing_review import last_year_shift
+    from revenue_analyst.domain import Event
+
+    def ev(name, start, end, impact=1.5):
+        return Event(property_id="p", name=name, kind="holiday", start=start, end=end,
+                     impact=impact)
+
+    xmas = [ev("Xmas", date(2025, 12, 23), date(2026, 1, 2)),
+            ev("Xmas", date(2026, 12, 23), date(2027, 1, 2))]
+    # Fixed-date holiday: 365 days apart → nearest whole weeks = 364.
+    assert last_year_shift(xmas, date(2026, 12, 1), date(2027, 1, 1))[0].days == 364
+    # No event in the window → plain 364.
+    assert last_year_shift(xmas, date(2026, 6, 1), date(2026, 7, 1)) == (
+        LAST_YEAR_SHIFT, None
+    )
