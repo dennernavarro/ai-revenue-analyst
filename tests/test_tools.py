@@ -78,3 +78,17 @@ def test_rates_summary_and_cap(tools):
         {"property_id": "urban-boutique", "start_date": "2026-01-01", "end_date": "2026-12-01"}
     )
     assert "error" in too_long
+
+
+def test_get_events_lists_holidays_with_impact(tools):
+    result = tools["get_events"].invoke(
+        {"property_id": "mountain-cabins", "start_date": "2026-12-01", "end_date": "2027-01-01"}
+    )
+    assert result["events"] == [
+        {"name": "Christmas & New Year", "kind": "holiday", "start": "2026-12-23",
+         "end": "2027-01-02", "impact": 2.0}
+    ]
+    unknown = tools["get_events"].invoke(
+        {"property_id": "nope", "start_date": "2026-12-01", "end_date": "2027-01-01"}
+    )
+    assert "valid_property_ids" in unknown

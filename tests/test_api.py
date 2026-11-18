@@ -223,3 +223,38 @@ def test_chat_keeps_conversation_memory(client):
     assert second["conversation_id"] == first["conversation_id"]
     assert second["reply"] == "You asked how many properties we manage."
     assert second["tool_calls"] == []
+
+
+def test_calendar_nights_carry_the_outlook(client):
+    days = client.get(
+        "/properties/mountain-cabins/calendar",
+        params={"start": "2026-12-01", "end": "2027-01-01"},
+    ).json()
+    dec25 = days[24]
+    assert dec25["day"] == "2026-12-25"
+    assert dec25["status"] == "behind" and dec25["arrival_blocked"] is True
+    assert dec25["kind"] == "event" and dec25["peer_booked"] == pytest.approx(1.3, abs=0.05)
+    assert days[25]["status"] == "sold_out"
+
+
+def test_events_benchmark_and_seasons_endpoints(client):
+    window = {"start": "2026-12-01", "end": "2027-01-01"}
+    events = client.get("/properties/mountain-cabins/events", params=window).json()
+    assert [e["name"] for e in events] == ["Christmas & New Year"]
+
+    bench = client.get("/properties/mountain-cabins/benchmark", params=window).json()
+    assert bench["behind"] is False
+    assert bench["on_the_books_share"] == pytest.approx(0.2984, abs=1e-4)
+    assert bench["aligned_on"] == "Christmas & New Year" and bench["shift_days"] == 364
+
+    # Easter 2027 compares with Easter 2026, not the same dates.
+    easter = client.get(
+        "/properties/seaside-villa/benchmark", params={"start": "2027-03-01", "end": "2027-04-01"}
+    ).json()
+    assert easter["shift_days"] == 357 and easter["behind"] is True
+
+    seasons = client.get("/properties/mountain-cabins/seasons").json()
+    assert len(seasons) == 12
+    assert sum(m["index"] for m in seasons) / 12 == pytest.approx(1.0, abs=0.01)
+    assert seasons[0]["level"] == "peak"  # January 2025, ski season
+    assert client.get("/properties/nope/seasons").status_code == 404

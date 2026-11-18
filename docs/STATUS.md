@@ -2,8 +2,8 @@
 
 _Last updated: 2026-11-17_
 
-**Version:** 1.1.0 + Phase 0 and the backtest merged into `main`; Phase 2 events in review.
-**Phase:** 1 and 2 in progress; calendar redesign and Auto-pilot designed (see PLAN.md).
+**Version:** 1.1.0 + Phase 0 and the backtest merged into `main`; Phase 2 events and the new UI in review.
+**Phase:** 1 in progress, 2 nearly done (new UI built); Auto-pilot designed (see PLAN.md).
 
 ## Working
 
@@ -12,7 +12,7 @@ _Last updated: 2026-11-17_
   and local events baked into demand, rates and lead times.
 - Deterministic analytics, REST API, dashboard at `/ui`, chat agent, deep
   agent, pricing review with human approval and rate publication.
-- Tests: 61 passed, 8 skipped (offline). Ruff clean. CI on GitHub Actions.
+- Tests: 65 passed, 8 skipped (offline). Ruff clean. CI on GitHub Actions.
 - Verified live with OpenRouter (`gpt-4o-mini`): chat answers match the KPI
   tiles; reviews route as expected on the current data.
 
@@ -30,6 +30,10 @@ _Last updated: 2026-11-17_
    simulator effects, `PMSProvider.get_events`, holiday-aligned last-year
    comparison (Easter 2027 ↔ Easter 2026 = 357 days), `event_aligned`
    backtest rule. Mock data regenerated — test fixtures moved accordingly.
+- **New UI** (`feat/calendar-redesign`, stacked on the events PR): purple,
+  clean calendar with per-night outlook (behind / on track / too early /
+  sold out / nobody can check in), day card, chat side panel, `/events`,
+  `/benchmark`, `/seasons`, `get_events` chat tool.
 
 Live reviews on the current data:
 
@@ -74,8 +78,12 @@ Before the events data (old baseline): fixed 40% 34% accuracy, last year 62%
 - Simulator: event uplift publishes rates above `max_rate` (Mountain Cabins
   Christmas $655 > $432); low-season rates fall below `min_rate` (Seaside
   Villa January $176 < $192). Cancellation rate doesn't vary by season.
-- Events API endpoint and chat tool not built yet; calendar UI still the old
-  design (new one in Claude Design, "Revenue Calendar Redesign").
+- The month summary says "behind" on almost no signal (Urban Boutique
+  December: 2% vs 3%) — the low-signal guard exists per night, not yet per
+  window.
+- The chat can't see minimum-stay blocks; it explains a blocked night by
+  its event instead.
+- Auto-pilot is designed (Claude Design) but not built; no switch in the UI.
 - Mock rate publication and pending reviews live in process memory.
 
 ## Local environment notes
@@ -87,6 +95,5 @@ Before the events data (old baseline): fixed 40% 34% accuracy, last year 62%
 
 ## Next
 
-Merge the Phase 2 events PR. Finish Phase 2: events tool and
-endpoint, calendar UI per the approved design. Then the night-level backtest,
-which gates Auto-pilot (Phase 4).
+Merge the Phase 2 events PR, then the UI PR (retarget it to `main` first).
+Then the night-level backtest, which gates Auto-pilot (Phase 4).
